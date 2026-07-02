@@ -48,26 +48,60 @@ const MindMap = ({ data, onNodeClick }) => {
         linkDirectionalParticleSpeed={0.005}
         onNodeClick={handleNodeClick}
         backgroundColor="transparent"
-        // Düğüm çizimi (Glow efekti)
+        // Düğüm çizimi (Glow efekti ve Node Decay)
         nodeCanvasObject={(node, ctx, globalScale) => {
           const label = node.label;
           const fontSize = 12 / globalScale;
           
-          // Glow effect
+          // Zaman hesaplaması (Node Decay)
+          let fillStyle = '#8a2be2'; // default
+          let shadowColor = '#bb86fc';
+          let shadowBlur = 15;
+          let opacity = 1;
+          
+          if (node.created_at) {
+            const nodeDate = new Date(node.created_at);
+            const now = new Date();
+            const diffHours = Math.abs(now - nodeDate) / (1000 * 60 * 60);
+            
+            if (diffHours < 1) {
+              // Son 1 saat (Yeni bilgi) - Çok parlak
+              fillStyle = '#d500f9';
+              shadowColor = '#e040fb';
+              shadowBlur = 25;
+            } else if (diffHours < 24) {
+              // Son 24 saat (Normal bilgi)
+              fillStyle = '#8a2be2';
+              shadowColor = '#bb86fc';
+              shadowBlur = 15;
+            } else {
+              // 24 saatten eski (Unutulmaya yüz tutmuş)
+              fillStyle = '#4a3b69';
+              shadowColor = 'transparent';
+              shadowBlur = 0;
+              opacity = 0.6;
+            }
+          }
+          
+          ctx.globalAlpha = opacity;
+
+          // Düğüm dairesi
           ctx.beginPath();
           ctx.arc(node.x, node.y, 6, 0, 2 * Math.PI, false);
-          ctx.fillStyle = '#8a2be2';
-          ctx.shadowBlur = 15;
-          ctx.shadowColor = '#bb86fc';
+          ctx.fillStyle = fillStyle;
+          ctx.shadowBlur = shadowBlur;
+          ctx.shadowColor = shadowColor;
           ctx.fill();
           
-          // Reset shadow for text
+          // Metin (Label)
           ctx.shadowBlur = 0;
           ctx.font = `${fontSize}px Sans-Serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillStyle = '#ffffff';
+          ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
           ctx.fillText(label, node.x, node.y + 12);
+          
+          ctx.globalAlpha = 1; // Reset alpha
         }}
       />
     </div>

@@ -36,9 +36,49 @@ const NodeDetailsPanel = ({ node, onClose }) => {
         </div>
       )}
 
+      {node.source_interactions && node.source_interactions.length > 0 && (
+        <div className="info-group">
+          <span className="info-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            Araştırma Konuları (Cevabı görmek için tıklayın)
+          </span>
+          <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {node.source_interactions.map((interaction, idx) => (
+              <details key={idx} style={{ 
+                backgroundColor: 'rgba(255, 255, 255, 0.05)', 
+                borderRadius: '6px', 
+                padding: '8px',
+                fontSize: '0.8rem',
+                lineHeight: '1.4',
+                cursor: 'pointer'
+              }}>
+                <summary style={{ 
+                  color: '#bb86fc', 
+                  outline: 'none',
+                  fontWeight: 'bold'
+                }}>
+                  {interaction.title}
+                </summary>
+                <div style={{ 
+                  marginTop: '10px', 
+                  paddingTop: '10px', 
+                  borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                  color: '#e0e0e0',
+                  maxHeight: '250px',
+                  overflowY: 'auto',
+                  whiteSpace: 'pre-wrap',
+                  cursor: 'text'
+                }}>
+                  {interaction.answer ? interaction.answer : <span style={{opacity:0.5, fontStyle:'italic'}}>Bu sohbet için yapay zeka cevabı kaydedilmemiş.</span>}
+                </div>
+              </details>
+            ))}
+          </div>
+        </div>
+      )}
+
       {node.sources && node.sources.length > 0 && (
         <div className="info-group">
-          <span className="info-label">Kaynaklar</span>
+          <span className="info-label">Kaynak Linkleri</span>
           <ul className="related-list">
             {node.sources.map((url, idx) => (
               <li key={idx} className="related-item" style={{ fontSize: '0.8rem', padding: '6px' }}>

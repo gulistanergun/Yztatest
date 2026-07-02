@@ -213,12 +213,18 @@ class GraphService:
                 MATCH (c:Concept)
                 OPTIONAL MATCH (c)-[:RELATED_TO]->(related:Concept)
                 OPTIONAL MATCH (rs:RawSession)-[:EXTRACTED_CONCEPT]->(c)
+                WITH c, related, rs,
+                     trim(replace(replace(replace(rs.question,
+                         'Siz şunu dediniz:\\n', ''),
+                         'You said:\\n', ''),
+                         'Siz şunu dediniz:', '')) AS cleanTitle
                 RETURN c.name       AS name,
                        c.topic      AS topic,
                        c.difficulty AS difficulty,
                        c.created_at AS created_at,
                        collect(DISTINCT related.name) AS related_concepts,
-                       collect(DISTINCT rs.url) AS source_urls
+                       collect(DISTINCT rs.url) AS source_urls,
+                       collect(DISTINCT {title: cleanTitle, answer: rs.answer}) AS source_interactions
                 """
             )
             records = await result.data()
@@ -227,14 +233,28 @@ class GraphService:
         edges = []
         seen_edges = set()
 
+        import re
         for r in records:
+            # Clean titles in Python for regex support
+            cleaned_interactions = []
+            seen_titles = set()
+            for inter in r["source_interactions"]:
+                t = inter.get("title")
+                a = inter.get("answer")
+                if t:
+                    clean_t = re.sub(r'^(Siz\s+[sş]unu\s+dediniz\s*:?\s*|You\s+said\s*:?\s*)', '', t, flags=re.IGNORECASE).strip()
+                    if clean_t and clean_t not in seen_titles:
+                        seen_titles.add(clean_t)
+                        cleaned_interactions.append({"title": clean_t, "answer": a})
+
             nodes.append({
                 "id": r["name"],
                 "label": r["name"],
                 "topic": r["topic"],
                 "difficulty": r["difficulty"],
                 "created_at": r["created_at"].iso_format() if r["created_at"] else None,
-                "sources": r["source_urls"]
+                "sources": r["source_urls"],
+                "source_interactions": cleaned_interactions
             })
             for rel in r["related_concepts"]:
                 if rel and (r["name"], rel) not in seen_edges:
