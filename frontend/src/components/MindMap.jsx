@@ -40,47 +40,62 @@ const MindMap = ({ data, onNodeClick }) => {
         width={dimensions.width}
         height={dimensions.height}
         nodeLabel="label"
-        nodeColor={(node) => '#bb86fc'}
+        nodeColor={(node) => {
+          const p = node.hlr_p ?? 1.0;
+          return p >= 0.80 ? '#00e676' : p >= 0.50 ? '#ff9100' : '#ff1744';
+        }}
         nodeRelSize={6}
-        linkColor={() => 'rgba(187, 134, 252, 0.4)'}
+        linkColor={(link) => {
+          const sourceNode = graphData.nodes.find(n => n.id === link.source?.id || n.id === link.source);
+          const targetNode = graphData.nodes.find(n => n.id === link.target?.id || n.id === link.target);
+          
+          const pSource = sourceNode?.hlr_p ?? 1.0;
+          const pTarget = targetNode?.hlr_p ?? 1.0;
+          const avgP = (pSource + pTarget) / 2;
+          
+          // Zayıflayan bağlar daha silik görünür
+          const alpha = Math.max(0.05, avgP * 0.5);
+          return `rgba(187, 134, 252, ${alpha})`;
+        }}
         linkWidth={2}
-        linkDirectionalParticles={2}
+        linkDirectionalParticles={(link) => {
+          const sourceNode = graphData.nodes.find(n => n.id === link.source?.id || n.id === link.source);
+          const targetNode = graphData.nodes.find(n => n.id === link.target?.id || n.id === link.target);
+          const avgP = ((sourceNode?.hlr_p ?? 1.0) + (targetNode?.hlr_p ?? 1.0)) / 2;
+          return avgP > 0.5 ? 2 : 0; // Çok unutulmuş bağlarda partikül hareketi dursun
+        }}
         linkDirectionalParticleSpeed={0.005}
         onNodeClick={handleNodeClick}
         backgroundColor="transparent"
-        // Düğüm çizimi (Glow efekti ve Node Decay)
+        // Düğüm çizimi (Glow efekti ve Unutma Eğrisi)
         nodeCanvasObject={(node, ctx, globalScale) => {
           const label = node.label;
           const fontSize = 12 / globalScale;
           
-          // Zaman hesaplaması (Node Decay)
-          let fillStyle = '#8a2be2'; // default
-          let shadowColor = '#bb86fc';
-          let shadowBlur = 15;
-          let opacity = 1;
+          // hlr_p bazlı renklendirme
+          const p = node.hlr_p ?? 1.0;
+          let fillStyle = '#00e676';
+          let shadowColor = '#69f0ae';
+          let shadowBlur = 20;
+          let opacity = 1.0;
           
-          if (node.created_at) {
-            const nodeDate = new Date(node.created_at);
-            const now = new Date();
-            const diffHours = Math.abs(now - nodeDate) / (1000 * 60 * 60);
-            
-            if (diffHours < 1) {
-              // Son 1 saat (Yeni bilgi) - Çok parlak
-              fillStyle = '#d500f9';
-              shadowColor = '#e040fb';
-              shadowBlur = 25;
-            } else if (diffHours < 24) {
-              // Son 24 saat (Normal bilgi)
-              fillStyle = '#8a2be2';
-              shadowColor = '#bb86fc';
-              shadowBlur = 15;
-            } else {
-              // 24 saatten eski (Unutulmaya yüz tutmuş)
-              fillStyle = '#4a3b69';
-              shadowColor = 'transparent';
-              shadowBlur = 0;
-              opacity = 0.6;
-            }
+          if (p >= 0.80) {
+            // Yeşil (Taze bilgi)
+            fillStyle = '#00e676';
+            shadowColor = '#69f0ae';
+            shadowBlur = 20;
+          } else if (p >= 0.50) {
+            // Turuncu (Kritik eşik)
+            fillStyle = '#ff9100';
+            shadowColor = '#ffab40';
+            shadowBlur = 12;
+            opacity = 0.85;
+          } else {
+            // Kırmızı (Unutulmuş)
+            fillStyle = '#ff1744';
+            shadowColor = '#ff5252';
+            shadowBlur = 8;
+            opacity = 0.60;
           }
           
           ctx.globalAlpha = opacity;
