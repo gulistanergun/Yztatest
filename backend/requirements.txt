@@ -7,10 +7,12 @@ pydantic-settings==2.6.1
 neo4j==5.27.0
 qdrant-client==1.12.1
 
-# AI / LLM (Sprint 2'de aktif kullanılacak)
+# AI / LLM (Privacy-First Local AI)
 langchain==0.3.7
-langchain-openai==0.2.9
-openai==1.57.0
+langchain-huggingface==0.2.0
+sentence-transformers==3.3.1
+# Kavram cikarimi + RAG cevap uretimi (Gemini) hala bunu kullaniyor
+langchain-google-genai==4.2.7
 
 # Yardımcı
 python-dotenv==1.0.1

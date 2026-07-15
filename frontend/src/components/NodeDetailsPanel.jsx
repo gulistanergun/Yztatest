@@ -1,8 +1,9 @@
 import React from 'react';
-import { X, ExternalLink, Network } from 'lucide-react';
+import { X, Network } from 'lucide-react';
 
 const NodeDetailsPanel = ({ node, onClose }) => {
   if (!node) return null;
+  const p = node.fsrs_p ?? 1.0;
 
   return (
     <div className={`side-panel glass-panel ${node ? 'open' : ''}`}>
@@ -17,6 +18,35 @@ const NodeDetailsPanel = ({ node, onClose }) => {
         <span className="info-label">Kategori</span>
         <span className="info-value">{node.topic || 'Genel'}</span>
       </div>
+
+      {typeof node.fsrs_p === 'number' && (
+        <div className="info-group">
+          <span className="info-label">Hatırlama Durumu</span>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <span
+              className={`badge ${p >= 0.8 ? 'badge-baslangic' : p >= 0.5 ? 'badge-orta' : 'badge-ileri'}`}
+              title="FSRS modelinin tahmini hatırlama olasılığı"
+            >
+              %{Math.round(p * 100)}
+              {p < 0.5 ? ' — tekrar gerekli' : p < 0.8 ? ' — kritik eşik' : ' — sağlam'}
+            </span>
+            {typeof node.stability === 'number' && (
+              <span className="badge" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--sis)', border: '1px solid var(--cizgi)' }}>
+                Stabilite: {node.stability.toFixed(1)} gün
+              </span>
+            )}
+          </div>
+          <div style={{ marginTop: '8px', height: '6px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.08)' }}>
+            <div style={{
+              width: `${p * 100}%`,
+              height: '100%',
+              borderRadius: '3px',
+              background: p >= 0.8 ? 'var(--nane)' : p >= 0.5 ? 'var(--kor)' : 'var(--tehlike)',
+              transition: 'width 0.5s ease',
+            }} />
+          </div>
+        </div>
+      )}
 
       <div className="info-group">
         <span className="info-label">Zorluk</span>
@@ -36,13 +66,53 @@ const NodeDetailsPanel = ({ node, onClose }) => {
         </div>
       )}
 
+      {node.source_interactions && node.source_interactions.length > 0 && (
+        <div className="info-group">
+          <span className="info-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            Araştırma Konuları (Cevabı görmek için tıklayın)
+          </span>
+          <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {node.source_interactions.map((interaction, idx) => (
+              <details key={idx} style={{ 
+                backgroundColor: 'rgba(255, 255, 255, 0.05)', 
+                borderRadius: '6px', 
+                padding: '8px',
+                fontSize: '0.8rem',
+                lineHeight: '1.4',
+                cursor: 'pointer'
+              }}>
+                <summary style={{
+                  color: 'var(--kor)',
+                  outline: 'none',
+                  fontWeight: 600
+                }}>
+                  {interaction.title}
+                </summary>
+                <div style={{ 
+                  marginTop: '10px', 
+                  paddingTop: '10px', 
+                  borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                  color: '#e0e0e0',
+                  maxHeight: '250px',
+                  overflowY: 'auto',
+                  whiteSpace: 'pre-wrap',
+                  cursor: 'text'
+                }}>
+                  {interaction.answer ? interaction.answer : <span style={{opacity:0.5, fontStyle:'italic'}}>Bu sohbet için yapay zeka cevabı kaydedilmemiş.</span>}
+                </div>
+              </details>
+            ))}
+          </div>
+        </div>
+      )}
+
       {node.sources && node.sources.length > 0 && (
         <div className="info-group">
-          <span className="info-label">Kaynaklar</span>
+          <span className="info-label">Kaynak Linkleri</span>
           <ul className="related-list">
             {node.sources.map((url, idx) => (
               <li key={idx} className="related-item" style={{ fontSize: '0.8rem', padding: '6px' }}>
-                <a href={url} target="_blank" rel="noreferrer" style={{ color: '#bb86fc', textDecoration: 'none' }}>
+                <a href={url} target="_blank" rel="noreferrer" style={{ color: 'var(--kor)', textDecoration: 'none' }}>
                   {url.length > 30 ? url.substring(0, 30) + '...' : url}
                 </a>
               </li>

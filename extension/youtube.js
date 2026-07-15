@@ -27,15 +27,42 @@
   }
 
   // ---- YouTube'un dahili transcript API'sini kullan ----
-  // ytInitialPlayerResponse JS objesi, sayfa yüklendiğinde window'a enjekte edilir.
-  // İçinde captionTracks → baseUrl ile altyazı alabiliriz.
+  // NOT: Content script izole dünyada çalıştığı için window.ytInitialPlayerResponse
+  // BURADAN OKUNAMAZ. Track bilgisi, MAIN world'de çalışan yt_page_bridge.js'ten
+  // postMessage ile gelir (aşağıdaki listener'da yakalanır).
+  let bridgeTracks = null;
+  let bridgeVideoId = null;
+
+  window.addEventListener("message", (ev) => {
+    if (ev.source !== window || !ev.data || ev.data.source !== "LS_YT_BRIDGE") return;
+    bridgeTracks = ev.data.tracks;
+    bridgeVideoId = ev.data.videoId;
+  });
+
+  // Köprüden track bilgisini iste ve kısa süre bekle
+  function requestTracksFromBridge(videoId, timeoutMs = 4000) {
+    return new Promise((resolve) => {
+      if (bridgeTracks && bridgeVideoId === videoId) {
+        resolve(bridgeTracks);
+        return;
+      }
+      window.postMessage({ source: "LS_YT_REQUEST" }, window.location.origin);
+      const started = Date.now();
+      const poll = setInterval(() => {
+        if (bridgeTracks && bridgeVideoId === videoId) {
+          clearInterval(poll);
+          resolve(bridgeTracks);
+        } else if (Date.now() - started > timeoutMs) {
+          clearInterval(poll);
+          resolve(bridgeTracks); // videoId eşleşmese de eldekiyle dene
+        }
+      }, 250);
+    });
+  }
+
   async function fetchTranscript(videoId) {
     try {
-      const playerData = window.ytInitialPlayerResponse;
-      if (!playerData) return null;
-
-      const tracks =
-        playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+      const tracks = await requestTracksFromBridge(videoId);
       if (!tracks || tracks.length === 0) return null;
 
       // Türkçe varsa onu, yoksa ilk track'i kullan

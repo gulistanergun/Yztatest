@@ -15,7 +15,7 @@ settings = get_settings()
 logger = get_logger(__name__)
 
 async def background_processor():
-    """Arka planda her 10 saniyede bir bekleyen verileri isler (test modu)."""
+    """Arka planda her 10 saniyede bir bekleyen verileri isler ve unutma eğrisini günceller."""
     logger.info("[AutoProcessor] Otonom isleyici basladi. Her 10 saniyede bir tarama yapilacak.")
     while True:
         try:
@@ -23,9 +23,15 @@ async def background_processor():
             neo4j_driver = await get_neo4j_driver()
             qdrant_client = await get_qdrant_client()
             service = GraphService(neo4j_driver=neo4j_driver, qdrant_client=qdrant_client)
+            
+            # 1. Bekleyen oturumları işle (kavram çıkarımı)
             stats = await service.process_pending_sessions(batch_size=20)
-            if stats["processed"] > 0 or stats["skipped"] > 0 or stats["errors"] > 0:
-                logger.info(f"[AutoProcessor] Islem tamamlandi: {stats}")
+            
+            # 2. Unutma Eğrisi (Forgetting Curve) güncellemesini yap
+            decay_count = await service.update_all_retrievability()
+            
+            if stats["processed"] > 0 or stats["skipped"] > 0 or stats["errors"] > 0 or decay_count > 0:
+                logger.info(f"[AutoProcessor] Islem tamamlandi: {stats} | {decay_count} kavram guncellendi.")
             else:
                 logger.debug("[AutoProcessor] Bekleyen oturum yok.")
         except asyncio.CancelledError:

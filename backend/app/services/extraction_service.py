@@ -26,18 +26,18 @@ class ExtractionResult(BaseModel):
     )
 
 
-# ---- Extraction Prompt ----
 EXTRACTION_PROMPT = ChatPromptTemplate.from_messages([
     (
         "system",
-        """Sen bir eğitim verisi analistinin yapay zeka asistanısın.
-Sana bir kullanıcı-LLM konuşması verecekler. Görevin bu konuşmadan öğrenilen teknik kavramları çıkarmak.
+        """Sen bir öğrenme ve verimlilik asistanının yapay zeka beynisin.
+Sana bir kullanıcı-LLM konuşması veya izlenen video/sayfa içeriği verecekler. Görevin bu içerikten öğrenilen veya bahsedilen "teknik kavramları, araçları ve teknolojileri" çıkarmak.
 
 KURALLAR:
-- Sadece gerçekten öğrenilen/araştırılan kavramları çıkar
-- Günlük konuşma, selamlama, şikayet gibi eğitimsel olmayan içeriklerde is_educational=false döndür
-- Kavram adları kısa ve kesin olmalı (3-4 kelimeden fazla değil)
-- Türkçe konuşmalardan da İngilizce kavram adları çıkarabilirsin (teknik terimler için)
+- Sadece gerçekten teknik, eğitimsel veya üretkenlik (Miro, Trello, Notion vb.) ile ilgili araç ve kavramları çıkar.
+- "Merhaba", "nasılsın", "teşekkürler" gibi günlük konuşmalar veya tamamen ilgisiz içeriklerde is_educational=false döndür.
+- Kavram adları kısa ve kesin olmalı (örn: "Pandas", "Miro", "Docker", "Agile").
+- ÇOK ÖNEMLİ (BAĞLANTILAR): Eğer bir alt dal veya kütüphaneden bahsediliyorsa (Örn: Pandas, Numpy), `related_to` listesine KESİNLİKLE onun ana veya üst teknolojisini (Örn: Python) eklemelisin! Hiyerarşik ve mantıksal ağlar (Node-Edge) kuruyorsun.
+- Türkçe konuşmalardan da orijinal (genellikle İngilizce) araç/kavram adları çıkar (Örn: "python'da dizi" -> "Array").
 
 Yanıtını SADECE aşağıdaki JSON formatında ver, başka hiçbir şey yazma:
 {{
@@ -46,7 +46,7 @@ Yanıtını SADECE aşağıdaki JSON formatında ver, başka hiçbir şey yazma:
       "name": "kavram_adı",
       "topic": "üst_konu",
       "difficulty": "baslangic|orta|ileri",
-      "related_to": ["kavram1", "kavram2"]
+      "related_to": ["ana_teknoloji", "ilişkili_kavram"]
     }}
   ],
   "main_topic": "ana_konu",
@@ -55,7 +55,7 @@ Yanıtını SADECE aşağıdaki JSON formatında ver, başka hiçbir şey yazma:
     ),
     (
         "human",
-        "Platform: {platform}\n\nKullanıcı Sorusu:\n{question}\n\nLLM Cevabı (ilk 800 karakter):\n{answer}",
+        "Platform: {platform}\n\nKullanıcı Sorusu/Konusu:\n{question}\n\nİçerik (ilk 800 karakter):\n{answer}",
     ),
 ])
 
@@ -68,7 +68,7 @@ class ConceptExtractor:
 
     def __init__(self):
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
+            model="gemini-3.5-flash",
             temperature=0,
             api_key=settings.GOOGLE_API_KEY,
         )

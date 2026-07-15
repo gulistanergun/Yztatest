@@ -1,0 +1,13 @@
+concept_id,concept_name,category,difficulty
+python-basics,Python Basics,programming,0.22
+oop,Object-Oriented Programming,programming,0.48
+sql-joins,SQL Joins,data,0.42
+pandas,Pandas DataFrames,data,0.38
+statistics,Statistics Fundamentals,data-science,0.55
+linear-regression,Linear Regression,machine-learning,0.5
+classification,Classification Metrics,machine-learning,0.52
+rag,Retrieval-Augmented Generation,ai,0.62
+prompt-engineering,Prompt Engineering,ai,0.35
+vector-db,Vector Databases,ai,0.58
+neo4j-graph,Neo4j Knowledge Graphs,backend,0.57
+fastapi,FastAPI Backend,backend,0.4

@@ -48,9 +48,9 @@ const ChatBar = ({ onSearch }) => {
             <X size={20} />
           </button>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px', color: '#a78bfa' }}>
-            <BrainCircuit size={24} />
-            <h3 style={{ margin: 0 }}>İkinci Beynin Yanıtlıyor</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px', color: 'var(--kor)' }}>
+            <BrainCircuit size={22} />
+            <h3 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 500, fontSize: '1.05rem' }}>İkinci beynin yanıtlıyor</h3>
           </div>
 
           {loading ? (

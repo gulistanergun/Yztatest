@@ -1,0 +1,6 @@
+users: 100
+days: 30
+events: 4842
+quiz_rows_for_modeling: 1477
+average_quiz_success_rate: 0.501
+seed: 42

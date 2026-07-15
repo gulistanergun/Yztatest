@@ -54,28 +54,72 @@ function App() {
     setDisplayGraph(fullGraphData);
   };
 
+  // Durum çubuğu istatistikleri: hatırlama olasılığı (p) varsa onu, yoksa yaşı kullan
+  const stats = React.useMemo(() => {
+    const now = Date.now();
+    const hasP = fullGraphData.nodes.some((n) => typeof n.fsrs_p === 'number');
+    let fresh = 0;   // p >= 0.8 (sağlam)  | yaş < 24s (taze)
+    let cooling = 0; // p < 0.5 (riskte)   | yaş > 72s (soğuyor)
+    for (const n of fullGraphData.nodes) {
+      if (hasP) {
+        if (typeof n.fsrs_p !== 'number') continue;
+        if (n.fsrs_p >= 0.8) fresh++;
+        else if (n.fsrs_p < 0.5) cooling++;
+      } else {
+        if (!n.created_at) continue;
+        const ageH = (now - new Date(n.created_at).getTime()) / 36e5;
+        if (ageH < 24) fresh++;
+        else if (ageH > 72) cooling++;
+      }
+    }
+    return { total: fullGraphData.nodes.length, fresh, cooling, hasP };
+  }, [fullGraphData]);
+
   return (
     <div className="app-container notebook-layout">
       {/* Sol Panel: Kaynaklar */}
       <Sidebar onSourceSelect={handleSourceSelect} onGraphRefresh={fetchGraph} />
 
       <div className="main-content">
-        <div className="header glass-panel" style={{ padding: '20px 30px', margin: '24px', width: 'max-content', position: 'absolute', zIndex: 10 }}>
-          <h1 className="title-glow" style={{ cursor: 'pointer' }} onClick={handleReset}>
-            Living Mind Tree
+        <div className="header glass-panel" style={{ padding: '18px 24px', margin: '24px', width: 'max-content', position: 'absolute', zIndex: 10 }}>
+          <h1 className="title-glow" style={{ cursor: 'pointer' }} onClick={handleReset} title="Tüm ağa dön">
+            Living Mind Tree<span className="spark">.</span>
           </h1>
-          <p>
-            {activeSource ? `Filtre: ${activeSource.title}` : 'Tüm Kişisel Öğrenme Ağı'}
-          </p>
+          <div className="statbar">
+            <span className="stat"><b>{stats.total}</b> kavram</span>
+            <span className="dot" />
+            <span className={stats.hasP ? 'stat strong' : 'stat warm'}>
+              <b>{stats.fresh}</b> {stats.hasP ? 'sağlam' : 'taze köz'}
+            </span>
+            <span className="dot" />
+            <span className={stats.hasP ? 'stat risk' : 'stat cold'}>
+              <b>{stats.cooling}</b> {stats.hasP ? 'riskte' : 'soğuyor'}
+            </span>
+          </div>
+          {activeSource && (
+            <p className="filter-note">
+              Filtre: {activeSource.title}
+              <button onClick={handleReset}>tümüne dön</button>
+            </p>
+          )}
         </div>
 
         {/* Merkez Graf */}
         <div className="graph-wrapper" style={{ flex: 1, position: 'relative' }}>
-          {!loading && (
-            <MindMap 
-              data={displayGraph} 
-              onNodeClick={(node) => setSelectedNode(node)} 
+          {!loading && displayGraph.nodes.length > 0 && (
+            <MindMap
+              data={displayGraph}
+              onNodeClick={(node) => setSelectedNode(node)}
             />
+          )}
+          {!loading && displayGraph.nodes.length === 0 && (
+            <div className="empty-state">
+              <h3>Zihin haritan henüz boş</h3>
+              <p>
+                ChatGPT, Gemini veya YouTube&apos;da öğrenmeye başla — eklenti
+                kavramları arka planda toplayıp burada közlere dönüştürecek.
+              </p>
+            </div>
           )}
         </div>
 
