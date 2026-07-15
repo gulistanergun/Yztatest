@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_huggingface import HuggingFaceEmbeddings
 from qdrant_client import AsyncQdrantClient
 from app.db.qdrant_client import get_qdrant_client
 from app.core.config import get_settings
+from app.core.embeddings import get_local_embeddings
 from app.core.logging import get_logger
 import time
 
@@ -27,17 +29,16 @@ async def get_llm():
     )
 
 async def get_embeddings():
-    return GoogleGenerativeAIEmbeddings(
-        model="models/gemini-embedding-001",
-        google_api_key=settings.GOOGLE_API_KEY
-    )
+    # Sorgu embedding'i de ingest ile AYNI yerel modeli kullanmali;
+    # aksi halde vektor boyutu (384) Qdrant koleksiyonuyla uyusmaz.
+    return get_local_embeddings()
 
 @router.post("/", response_model=ChatResponse)
 async def chat_with_brain(
     request: ChatRequest,
     qdrant: AsyncQdrantClient = Depends(get_qdrant_client),
     llm: ChatGoogleGenerativeAI = Depends(get_llm),
-    embeddings: GoogleGenerativeAIEmbeddings = Depends(get_embeddings)
+    embeddings: HuggingFaceEmbeddings = Depends(get_embeddings)
 ):
     """Kullanıcının Zihin Haritasındaki bilgilerine dayanarak cevap verir (RAG)."""
     start_time = time.time()

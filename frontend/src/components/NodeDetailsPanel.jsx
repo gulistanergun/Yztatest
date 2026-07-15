@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, ExternalLink, Network } from 'lucide-react';
+import { X, Network } from 'lucide-react';
 
 const NodeDetailsPanel = ({ node, onClose }) => {
   if (!node) return null;
@@ -17,6 +17,21 @@ const NodeDetailsPanel = ({ node, onClose }) => {
         <span className="info-label">Kategori</span>
         <span className="info-value">{node.topic || 'Genel'}</span>
       </div>
+
+      {typeof node.fsrs_p === 'number' && (
+        <div className="info-group">
+          <span className="info-label">Hatırlama Durumu</span>
+          <div>
+            <span
+              className={`badge ${node.fsrs_p >= 0.8 ? 'badge-baslangic' : node.fsrs_p >= 0.5 ? 'badge-orta' : 'badge-ileri'}`}
+              title="FSRS/HLR modelinin tahmini hatırlama olasılığı"
+            >
+              %{Math.round(node.fsrs_p * 100)}
+              {node.fsrs_p < 0.5 ? ' — tekrar gerekli' : node.fsrs_p < 0.8 ? ' — kritik eşik' : ' — sağlam'}
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="info-group">
         <span className="info-label">Zorluk</span>
@@ -51,10 +66,10 @@ const NodeDetailsPanel = ({ node, onClose }) => {
                 lineHeight: '1.4',
                 cursor: 'pointer'
               }}>
-                <summary style={{ 
-                  color: '#bb86fc', 
+                <summary style={{
+                  color: 'var(--kor)',
                   outline: 'none',
-                  fontWeight: 'bold'
+                  fontWeight: 600
                 }}>
                   {interaction.title}
                 </summary>
@@ -82,7 +97,7 @@ const NodeDetailsPanel = ({ node, onClose }) => {
           <ul className="related-list">
             {node.sources.map((url, idx) => (
               <li key={idx} className="related-item" style={{ fontSize: '0.8rem', padding: '6px' }}>
-                <a href={url} target="_blank" rel="noreferrer" style={{ color: '#bb86fc', textDecoration: 'none' }}>
+                <a href={url} target="_blank" rel="noreferrer" style={{ color: 'var(--kor)', textDecoration: 'none' }}>
                   {url.length > 30 ? url.substring(0, 30) + '...' : url}
                 </a>
               </li>

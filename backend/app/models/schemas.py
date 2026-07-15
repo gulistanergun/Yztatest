@@ -11,7 +11,7 @@ class MessagePair(BaseModel):
 
 class IngestRequest(BaseModel):
     """Chrome Extension'dan gelen ham veri modeli."""
-    platform: Literal["ChatGPT", "Gemini", "YouTube"] = Field(..., description="Verinin geldiği platform")
+    platform: Literal["ChatGPT", "Gemini", "YouTube", "Web"] = Field(..., description="Verinin geldiği platform (Web = sağ tık menüsüyle kaydedilen seçim)")
     url: str = Field(..., description="Konuşmanın yapıldığı URL")
     timestamp: datetime = Field(..., description="ISO 8601 formatında zaman damgası")
     session_id: str = Field(..., description="Tarayıcı oturum ID'si")

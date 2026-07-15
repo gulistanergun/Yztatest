@@ -5,7 +5,8 @@
   "description": "ChatGPT ve Gemini konuşmalarını otonom olarak izleyip LearnSphere backend'ine gönderir.",
   "permissions": [
     "storage",
-    "alarms"
+    "alarms",
+    "contextMenus"
   ],
   "host_permissions": [
     "*://chatgpt.com/*",
@@ -37,6 +38,12 @@
         "youtube.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://www.youtube.com/*"],
+      "js": ["yt_page_bridge.js"],
+      "run_at": "document_idle",
+      "world": "MAIN"
     }
   ]
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Video, MessageSquare, Trash2, Clock, ChevronDown, ChevronRight, Sparkles, Bot } from 'lucide-react';
+import { Video, MessageSquare, Trash2, Clock, ChevronDown, ChevronRight, Sparkles, Bot, Globe } from 'lucide-react';
 
 const Sidebar = ({ onSourceSelect, onGraphRefresh }) => {
   const [groupedSources, setGroupedSources] = useState({});
@@ -84,6 +84,7 @@ const Sidebar = ({ onSourceSelect, onGraphRefresh }) => {
     if (p.includes('youtube')) return { icon: <Video size={14} />, label: 'YouTube' };
     if (p.includes('gemini')) return { icon: <Sparkles size={14} />, label: 'Gemini' };
     if (p.includes('chatgpt')) return { icon: <Bot size={14} />, label: 'ChatGPT' };
+    if (p === 'web') return { icon: <Globe size={14} />, label: 'Web Seçimi' };
     return { icon: <MessageSquare size={14} />, label: platform || 'Web' };
   };
 
@@ -102,7 +103,8 @@ const Sidebar = ({ onSourceSelect, onGraphRefresh }) => {
   return (
     <div className="sidebar glass-panel">
       <div className="sidebar-header">
-        <h2 className="title-glow" style={{ fontSize: '1.2rem' }}>Öğrenme Kaynakları</h2>
+        <span className="eyebrow">LearnSphere</span>
+        <h2>Öğrenme Kaynakları</h2>
       </div>
       <div className="source-list" style={{ overflowY: 'auto', paddingRight: '5px' }}>
         {loading ? (
@@ -113,27 +115,10 @@ const Sidebar = ({ onSourceSelect, onGraphRefresh }) => {
             const isExpanded = expandedGroups[groupName];
             return (
               <div key={groupName} style={{ marginBottom: '15px' }}>
-                <div 
-                  onClick={() => toggleGroup(groupName)}
-                  style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    cursor: 'pointer',
-                    color: '#e0e0e0', // Daha mat bir başlık rengi
-                    padding: '5px 10px', 
-                    margin: '0 0 10px 0',
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                  }}
-                >
-                  {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                  <h3 style={{ 
-                    fontSize: '0.8rem', 
-                    margin: '0 0 0 5px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '1px',
-                    flex: 1
-                  }}>
-                    {groupName} <span style={{ opacity: 0.5, fontSize: '0.7rem' }}>({items.length})</span>
+                <div className="source-group-header" onClick={() => toggleGroup(groupName)}>
+                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <h3>
+                    {groupName} <span className="count">({items.length})</span>
                   </h3>
                 </div>
                 

@@ -19,8 +19,15 @@ const PII_PATTERNS = [
   // Türkiye'ye özgü telefon numaraları
   { pattern: /(?:\+90|0090|0)?\s*(?:\d{3,4})[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}/g, replacement: "[TELEFON GİZLENDİ]" },
 
-  // API key / Token benzeri uzun alfanumerik diziler (30+ karakter)
-  { pattern: /\b[A-Za-z0-9_\-]{30,}\b/g, replacement: "[TOKEN/ANAHTAR GİZLENDİ]" },
+  // API key / Token — bilinen öneklerle hedefli eşleşme.
+  // (Eski hali 30+ karakterlik HER diziyi siliyordu; bu, kod örneklerindeki
+  // hash/base64/uzun değişken adlarını da bozuyordu.)
+  {
+    pattern: /\b(?:sk-[A-Za-z0-9_\-]{16,}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[A-Za-z0-9_\-]{20,}|xox[bap]-[A-Za-z0-9\-]{16,}|eyJ[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,})\b/g,
+    replacement: "[TOKEN/ANAHTAR GİZLENDİ]",
+  },
+  // "api_key: xxxx", "token=xxxx" gibi açıkça etiketlenmiş sırlar
+  { pattern: /\b(?:api[_-]?key|access[_-]?token|secret)\s*[:=]\s*['"]?[A-Za-z0-9_\-]{12,}['"]?/gi, replacement: "[TOKEN/ANAHTAR GİZLENDİ]" },
 ];
 
 /**
@@ -36,3 +43,6 @@ function sanitizePII(text) {
   });
   return sanitized;
 }
+
+// Hem content script (classic) hem service worker (module) erişebilsin
+globalThis.sanitizePII = sanitizePII;
