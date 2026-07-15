@@ -16,3 +16,6 @@ const LS_CONFIG = {
   // Debug modunda console logları aktif
   DEBUG: true,
 };
+
+// Hem content script (classic) hem service worker (module) erişebilsin
+globalThis.LS_CONFIG = LS_CONFIG;

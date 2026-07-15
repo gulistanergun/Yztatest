@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, ExternalLink, Network } from 'lucide-react';
+import { X, Network } from 'lucide-react';
 
 const NodeDetailsPanel = ({ node, onClose }) => {
   if (!node) return null;
@@ -19,39 +19,41 @@ const NodeDetailsPanel = ({ node, onClose }) => {
         <span className="info-value">{node.topic || 'Genel'}</span>
       </div>
 
+      {typeof node.fsrs_p === 'number' && (
+        <div className="info-group">
+          <span className="info-label">Hatırlama Durumu</span>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <span
+              className={`badge ${p >= 0.8 ? 'badge-baslangic' : p >= 0.5 ? 'badge-orta' : 'badge-ileri'}`}
+              title="FSRS modelinin tahmini hatırlama olasılığı"
+            >
+              %{Math.round(p * 100)}
+              {p < 0.5 ? ' — tekrar gerekli' : p < 0.8 ? ' — kritik eşik' : ' — sağlam'}
+            </span>
+            {typeof node.stability === 'number' && (
+              <span className="badge" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--sis)', border: '1px solid var(--cizgi)' }}>
+                Stabilite: {node.stability.toFixed(1)} gün
+              </span>
+            )}
+          </div>
+          <div style={{ marginTop: '8px', height: '6px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.08)' }}>
+            <div style={{
+              width: `${p * 100}%`,
+              height: '100%',
+              borderRadius: '3px',
+              background: p >= 0.8 ? 'var(--nane)' : p >= 0.5 ? 'var(--kor)' : 'var(--tehlike)',
+              transition: 'width 0.5s ease',
+            }} />
+          </div>
+        </div>
+      )}
+
       <div className="info-group">
         <span className="info-label">Zorluk</span>
         <div>
           <span className={`badge badge-${node.difficulty?.toLowerCase() || 'baslangic'}`}>
             {node.difficulty || 'Bilinmiyor'}
           </span>
-        </div>
-      </div>
-
-      <div className="info-group">
-        <span className="info-label">Hafıza Durumu</span>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
-          <span className="badge" style={{ 
-            backgroundColor: p >= 0.80 ? '#00e676' : p >= 0.50 ? '#ff9100' : '#ff1744',
-            color: '#000',
-            fontWeight: 'bold'
-          }}>
-            Hatırlama: %{Math.round(p * 100)}
-          </span>
-          {node.stability && (
-            <span className="badge" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', color: '#fff' }}>
-              Stabilite: {node.stability.toFixed(1)} gün
-            </span>
-          )}
-        </div>
-        <div style={{ marginTop: '8px', height: '6px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.1)' }}>
-          <div style={{ 
-            width: `${p * 100}%`, 
-            height: '100%', 
-            borderRadius: '3px',
-            background: p >= 0.80 ? '#00e676' : p >= 0.50 ? '#ff9100' : '#ff1744',
-            transition: 'width 0.5s ease' 
-          }} />
         </div>
       </div>
 
@@ -79,10 +81,10 @@ const NodeDetailsPanel = ({ node, onClose }) => {
                 lineHeight: '1.4',
                 cursor: 'pointer'
               }}>
-                <summary style={{ 
-                  color: '#bb86fc', 
+                <summary style={{
+                  color: 'var(--kor)',
                   outline: 'none',
-                  fontWeight: 'bold'
+                  fontWeight: 600
                 }}>
                   {interaction.title}
                 </summary>
@@ -110,7 +112,7 @@ const NodeDetailsPanel = ({ node, onClose }) => {
           <ul className="related-list">
             {node.sources.map((url, idx) => (
               <li key={idx} className="related-item" style={{ fontSize: '0.8rem', padding: '6px' }}>
-                <a href={url} target="_blank" rel="noreferrer" style={{ color: '#bb86fc', textDecoration: 'none' }}>
+                <a href={url} target="_blank" rel="noreferrer" style={{ color: 'var(--kor)', textDecoration: 'none' }}>
                   {url.length > 30 ? url.substring(0, 30) + '...' : url}
                 </a>
               </li>

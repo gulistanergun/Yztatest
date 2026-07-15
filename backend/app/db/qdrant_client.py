@@ -8,8 +8,8 @@ logger = get_logger(__name__)
 
 _client: AsyncQdrantClient | None = None
 
-# models/gemini-embedding-001 vektör boyutu
-EMBEDDING_DIMENSION = 3072
+# all-MiniLM-L6-v2 vektör boyutu
+EMBEDDING_DIMENSION = 384
 
 
 async def get_qdrant_client() -> AsyncQdrantClient:

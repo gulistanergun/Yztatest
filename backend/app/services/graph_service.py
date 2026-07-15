@@ -10,7 +10,7 @@ from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import PointStruct
 import uuid
 from app.core.config import get_settings
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from app.core.embeddings import get_local_embeddings
 from app.services.fsrs_engine import FSRSEngine
 
 settings = get_settings()
@@ -32,11 +32,9 @@ class GraphService:
         self.extractor = ConceptExtractor()
         self.fsrs = FSRSEngine()
         
-        # Embedding modeli
-        self.embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/gemini-embedding-001",
-            google_api_key=settings.GOOGLE_API_KEY
-        )
+        # Yerel (Offline) Embedding modeli - Privacy First
+        # (paylasilan singleton: her GraphService olusumunda model yeniden yuklenmez)
+        self.embeddings = get_local_embeddings()
 
     async def process_pending_sessions(self, batch_size: int = 10) -> dict:
         """
