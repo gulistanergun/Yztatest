@@ -27,6 +27,33 @@ const NodeDetailsPanel = ({ node, onClose }) => {
         </div>
       </div>
 
+      <div className="info-group">
+        <span className="info-label">Hafıza Durumu</span>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
+          <span className="badge" style={{ 
+            backgroundColor: (node.hlr_p ?? 1.0) >= 0.80 ? '#00e676' : (node.hlr_p ?? 1.0) >= 0.50 ? '#ff9100' : '#ff1744',
+            color: '#000',
+            fontWeight: 'bold'
+          }}>
+            Hatırlama: %{Math.round((node.hlr_p ?? 1.0) * 100)}
+          </span>
+          {node.stability && (
+            <span className="badge" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', color: '#fff' }}>
+              Stabilite: {node.stability.toFixed(1)} gün
+            </span>
+          )}
+        </div>
+        <div style={{ marginTop: '8px', height: '6px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.1)' }}>
+          <div style={{ 
+            width: `${(node.hlr_p ?? 1.0) * 100}%`, 
+            height: '100%', 
+            borderRadius: '3px',
+            background: (node.hlr_p ?? 1.0) >= 0.80 ? '#00e676' : (node.hlr_p ?? 1.0) >= 0.50 ? '#ff9100' : '#ff1744',
+            transition: 'width 0.5s ease' 
+          }} />
+        </div>
+      </div>
+
       {node.created_at && (
         <div className="info-group">
           <span className="info-label">Öğrenilme Tarihi</span>

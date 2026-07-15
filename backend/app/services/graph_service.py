@@ -1,3 +1,4 @@
+import asyncio
 from neo4j import AsyncDriver
 from app.services.extraction_service import ConceptExtractor, ExtractionResult
 from app.core.logging import get_logger
@@ -10,6 +11,7 @@ from qdrant_client.models import PointStruct
 import uuid
 from app.core.config import get_settings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from app.services.fsrs_engine import FSRSEngine
 
 settings = get_settings()
 
@@ -28,6 +30,7 @@ class GraphService:
         self.neo4j = neo4j_driver
         self.qdrant = qdrant_client
         self.extractor = ConceptExtractor()
+        self.fsrs = FSRSEngine()
         
         # Embedding modeli
         self.embeddings = GoogleGenerativeAIEmbeddings(
@@ -75,6 +78,8 @@ class GraphService:
                     exc_info=True,
                 )
                 stats["errors"] += 1
+            finally:
+                await asyncio.sleep(2)  # Ücretsiz tier API kota sınırına (429) takılmamak için bekle
 
         logger.info(f"[GraphService] Tamamlandi: {stats}")
         return stats
@@ -148,6 +153,9 @@ class GraphService:
         """
         async with self.neo4j.session() as neo_session:
             for concept in extraction.concepts:
+                # FSRS: Başlangıç hafıza metriklerini hesapla
+                fsrs_state = self.fsrs.calculate_initial_state(concept.difficulty)
+
                 # Concept node'u oluştur (veya güncelle)
                 await neo_session.run(
                     """
@@ -155,15 +163,24 @@ class GraphService:
                     ON CREATE SET
                         c.topic      = $topic,
                         c.difficulty = $difficulty,
-                        c.created_at = datetime()
+                        c.created_at = datetime(),
+                        c.fsrs_d     = $fsrs_d,
+                        c.fsrs_s     = $fsrs_s,
+                        c.hlr_p      = $fsrs_p,
+                        c.last_studied = datetime()
                     ON MATCH SET
                         c.topic      = $topic,
                         c.difficulty = $difficulty,
-                        c.updated_at = datetime()
+                        c.updated_at = datetime(),
+                        c.last_studied = datetime(),
+                        c.fsrs_s     = coalesce(c.fsrs_s, $fsrs_s) * 1.5  // Tekrar karşılaşıldığı için stabilite artar
                     """,
                     name=concept.name,
                     topic=concept.topic,
                     difficulty=concept.difficulty,
+                    fsrs_d=fsrs_state["difficulty"],
+                    fsrs_s=fsrs_state["stability"],
+                    fsrs_p=fsrs_state["retrievability"],
                 )
 
                 # İlişkilendirme: RELATED_TO
@@ -215,13 +232,15 @@ class GraphService:
                 OPTIONAL MATCH (rs:RawSession)-[:EXTRACTED_CONCEPT]->(c)
                 WITH c, related, rs,
                      trim(replace(replace(replace(rs.question,
-                         'Siz şunu dediniz:\\n', ''),
-                         'You said:\\n', ''),
-                         'Siz şunu dediniz:', '')) AS cleanTitle
+                          'Siz şunu dediniz:\\n', ''),
+                          'You said:\\n', ''),
+                          'Siz şunu dediniz:', '')) AS cleanTitle
                 RETURN c.name       AS name,
                        c.topic      AS topic,
                        c.difficulty AS difficulty,
                        c.created_at AS created_at,
+                       c.fsrs_s     AS stability,
+                       c.last_studied AS last_studied,
                        collect(DISTINCT related.name) AS related_concepts,
                        collect(DISTINCT rs.url) AS source_urls,
                        collect(DISTINCT {title: cleanTitle, answer: rs.answer}) AS source_interactions
@@ -234,6 +253,7 @@ class GraphService:
         seen_edges = set()
 
         import re
+        from datetime import datetime, timezone
         for r in records:
             # Clean titles in Python for regex support
             cleaned_interactions = []
@@ -247,12 +267,29 @@ class GraphService:
                         seen_titles.add(clean_t)
                         cleaned_interactions.append({"title": clean_t, "answer": a})
 
+            # Calculate dynamic hlr_p using FSRSEngine
+            stability = r.get("stability")
+            last_studied = r.get("last_studied")
+            hlr_p = 1.0
+            
+            if stability is not None and last_studied is not None:
+                # Convert neo4j.time.DateTime to python datetime
+                studied_dt = last_studied.to_native()
+                if studied_dt.tzinfo is None:
+                    studied_dt = studied_dt.replace(tzinfo=timezone.utc)
+                
+                now = datetime.now(timezone.utc)
+                elapsed_days = (now - studied_dt).total_seconds() / (24 * 3600)
+                hlr_p = self.fsrs.calculate_current_retrievability(stability, elapsed_days)
+
             nodes.append({
                 "id": r["name"],
                 "label": r["name"],
                 "topic": r["topic"],
                 "difficulty": r["difficulty"],
                 "created_at": r["created_at"].iso_format() if r["created_at"] else None,
+                "hlr_p": hlr_p,
+                "stability": stability,
                 "sources": r["source_urls"],
                 "source_interactions": cleaned_interactions
             })
@@ -330,4 +367,31 @@ class GraphService:
                         d["title"] = d["title"][:77] + "..."
                 cleaned.append(d)
             return cleaned
+
+    async def update_all_retrievability(self) -> int:
+        """
+        Tüm Concept düğümlerinin R (retrievability / hlr_p) değerini günceller.
+        FSRS formülü: R(t) = (1 + factor * t / S)^decay
+        """
+        async with self.neo4j.session() as session:
+            result = await session.run("""
+                MATCH (c:Concept)
+                WHERE c.fsrs_s IS NOT NULL AND c.last_studied IS NOT NULL
+                WITH c, 
+                     duration.between(c.last_studied, datetime()).days 
+                       + duration.between(c.last_studied, datetime()).hours / 24.0 
+                     AS elapsed_days
+                WHERE elapsed_days > 0
+                WITH c, elapsed_days,
+                     // FSRS Power Law: R = (1 + factor * t / S)^decay
+                     // factor = 0.2346, decay = -0.5
+                     (1.0 + 0.2346 * elapsed_days / c.fsrs_s) ^ (-0.5) AS new_p
+                SET c.hlr_p = round(
+                    CASE WHEN new_p < 0 THEN 0.0
+                         WHEN new_p > 1 THEN 1.0
+                         ELSE new_p END, 4)
+                RETURN count(c) AS updated_count
+            """)
+            record = await result.single()
+            return record["updated_count"] if record else 0
 
