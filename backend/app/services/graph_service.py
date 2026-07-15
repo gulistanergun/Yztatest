@@ -166,14 +166,27 @@ class GraphService:
                         c.created_at = datetime(),
                         c.fsrs_d     = $fsrs_d,
                         c.fsrs_s     = $fsrs_s,
-                        c.hlr_p      = $fsrs_p,
+                        c.fsrs_p     = $fsrs_p,
                         c.last_studied = datetime()
                     ON MATCH SET
                         c.topic      = $topic,
                         c.difficulty = $difficulty,
                         c.updated_at = datetime(),
-                        c.last_studied = datetime(),
-                        c.fsrs_s     = coalesce(c.fsrs_s, $fsrs_s) * 1.5  // Tekrar karşılaşıldığı için stabilite artar
+                        c.last_studied = CASE
+                            WHEN c.last_studied IS NOT NULL
+                                 AND c.last_studied > datetime() - duration({hours: 24})
+                            THEN c.last_studied
+                            ELSE datetime()
+                        END,
+                        c.fsrs_s = CASE
+                            WHEN c.last_studied IS NOT NULL
+                                 AND c.last_studied > datetime() - duration({hours: 24})
+                            THEN c.fsrs_s
+                            ELSE CASE
+                                WHEN coalesce(c.fsrs_s, $fsrs_s) * 1.5 > 365 THEN 365.0
+                                ELSE coalesce(c.fsrs_s, $fsrs_s) * 1.5
+                            END
+                        END
                     """,
                     name=concept.name,
                     topic=concept.topic,
@@ -218,6 +231,75 @@ class GraphService:
                 "MATCH (rs:RawSession {session_id: $id}) SET rs.processed = true",
                 id=session_id,
             )
+
+    async def update_concept_after_quiz(self, concept_name: str, score: float) -> dict:
+        """
+        Kullanıcı quiz sonucunu gönderdiğinde ilgili kavramın FSRS parametrelerini günceller.
+        """
+        async with self.neo4j.session() as session:
+            # 1. Mevcut parametreleri al (Yoksa varsayılan başlangıç değerini ata)
+            result = await session.run(
+                """
+                MATCH (c:Concept {name: $name})
+                RETURN c.fsrs_d AS d, c.fsrs_s AS s, c.difficulty AS diff_label
+                """,
+                name=concept_name
+            )
+            record = await result.single()
+            
+            if not record:
+                logger.warning(f"[GraphService] Quiz guncellemesi basarisiz: '{concept_name}' bulunamadi.")
+                return {"status": "error", "message": f"Concept '{concept_name}' not found."}
+                
+            current_d = record["d"]
+            current_s = record["s"]
+            diff_label = record["diff_label"] or "orta"
+            
+            # Eğer veritabanında FSRS değerleri yoksa (eski kayıtsa) baştan hesapla
+            if current_d is None or current_s is None:
+                initial_state = self.fsrs.calculate_initial_state(diff_label)
+                current_d = initial_state["difficulty"]
+                current_s = initial_state["stability"]
+                
+            # 2. Yeni değerleri FSRS ile hesapla
+            updated_state = self.fsrs.calculate_quiz_update(current_d, current_s, score)
+            elapsed_days = self.fsrs.calculate_elapsed_days_for_retrievability(
+                updated_state["stability"],
+                updated_state["retrievability"],
+            )
+            elapsed_seconds = int(elapsed_days * 24 * 3600)
+            
+            # 3. Veritabanını güncelle
+            await session.run(
+                """
+                MATCH (c:Concept {name: $name})
+                SET c.fsrs_d = $new_d,
+                    c.fsrs_s = $new_s,
+                    c.fsrs_p = $new_p,
+                    c.last_studied = datetime() - duration({seconds: $elapsed_seconds}),
+                    c.last_reviewed_at = datetime(),
+                    c.updated_at = datetime()
+                """,
+                name=concept_name,
+                new_d=updated_state["difficulty"],
+                new_s=updated_state["stability"],
+                new_p=updated_state["retrievability"],
+                elapsed_seconds=elapsed_seconds,
+            )
+            
+            logger.info(
+                f"[GraphService] '{concept_name}' kavramı quiz sonrasında guncellendi | "
+                f"Skor: {score} | "
+                f"Yeni S: {updated_state['stability']} | Yeni R: {updated_state['retrievability']}"
+            )
+            
+            return {
+                "status": "success",
+                "concept": concept_name,
+                "score": score,
+                "new_stability": updated_state["stability"],
+                "new_retrievability": updated_state["retrievability"]
+            }
 
     async def get_graph_data(self) -> dict:
         """
@@ -267,10 +349,10 @@ class GraphService:
                         seen_titles.add(clean_t)
                         cleaned_interactions.append({"title": clean_t, "answer": a})
 
-            # Calculate dynamic hlr_p using FSRSEngine
+            # Calculate dynamic FSRS retrievability using FSRSEngine
             stability = r.get("stability")
             last_studied = r.get("last_studied")
-            hlr_p = 1.0
+            fsrs_p = 1.0
             
             if stability is not None and last_studied is not None:
                 # Convert neo4j.time.DateTime to python datetime
@@ -280,7 +362,7 @@ class GraphService:
                 
                 now = datetime.now(timezone.utc)
                 elapsed_days = (now - studied_dt).total_seconds() / (24 * 3600)
-                hlr_p = self.fsrs.calculate_current_retrievability(stability, elapsed_days)
+                fsrs_p = self.fsrs.calculate_current_retrievability(stability, elapsed_days)
 
             nodes.append({
                 "id": r["name"],
@@ -288,7 +370,7 @@ class GraphService:
                 "topic": r["topic"],
                 "difficulty": r["difficulty"],
                 "created_at": r["created_at"].iso_format() if r["created_at"] else None,
-                "hlr_p": hlr_p,
+                "fsrs_p": fsrs_p,
                 "stability": stability,
                 "sources": r["source_urls"],
                 "source_interactions": cleaned_interactions
@@ -370,26 +452,26 @@ class GraphService:
 
     async def update_all_retrievability(self) -> int:
         """
-        Tüm Concept düğümlerinin R (retrievability / hlr_p) değerini günceller.
+        Tüm Concept düğümlerinin R (retrievability / fsrs_p) değerini günceller.
         FSRS formülü: R(t) = (1 + factor * t / S)^decay
         """
         async with self.neo4j.session() as session:
             result = await session.run("""
                 MATCH (c:Concept)
                 WHERE c.fsrs_s IS NOT NULL AND c.last_studied IS NOT NULL
-                WITH c, 
-                     duration.between(c.last_studied, datetime()).days 
-                       + duration.between(c.last_studied, datetime()).hours / 24.0 
+                WITH c,
+                     duration.inSeconds(c.last_studied, datetime()).seconds / 86400.0
                      AS elapsed_days
                 WHERE elapsed_days > 0
                 WITH c, elapsed_days,
                      // FSRS Power Law: R = (1 + factor * t / S)^decay
                      // factor = 0.2346, decay = -0.5
                      (1.0 + 0.2346 * elapsed_days / c.fsrs_s) ^ (-0.5) AS new_p
-                SET c.hlr_p = round(
+                WITH c, round(
                     CASE WHEN new_p < 0 THEN 0.0
                          WHEN new_p > 1 THEN 1.0
-                         ELSE new_p END, 4)
+                         ELSE new_p END, 4) AS rounded_p
+                SET c.fsrs_p = rounded_p
                 RETURN count(c) AS updated_count
             """)
             record = await result.single()

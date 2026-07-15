@@ -3,6 +3,7 @@ import { X, ExternalLink, Network } from 'lucide-react';
 
 const NodeDetailsPanel = ({ node, onClose }) => {
   if (!node) return null;
+  const p = node.fsrs_p ?? 1.0;
 
   return (
     <div className={`side-panel glass-panel ${node ? 'open' : ''}`}>
@@ -31,11 +32,11 @@ const NodeDetailsPanel = ({ node, onClose }) => {
         <span className="info-label">Hafıza Durumu</span>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
           <span className="badge" style={{ 
-            backgroundColor: (node.hlr_p ?? 1.0) >= 0.80 ? '#00e676' : (node.hlr_p ?? 1.0) >= 0.50 ? '#ff9100' : '#ff1744',
+            backgroundColor: p >= 0.80 ? '#00e676' : p >= 0.50 ? '#ff9100' : '#ff1744',
             color: '#000',
             fontWeight: 'bold'
           }}>
-            Hatırlama: %{Math.round((node.hlr_p ?? 1.0) * 100)}
+            Hatırlama: %{Math.round(p * 100)}
           </span>
           {node.stability && (
             <span className="badge" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', color: '#fff' }}>
@@ -45,10 +46,10 @@ const NodeDetailsPanel = ({ node, onClose }) => {
         </div>
         <div style={{ marginTop: '8px', height: '6px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.1)' }}>
           <div style={{ 
-            width: `${(node.hlr_p ?? 1.0) * 100}%`, 
+            width: `${p * 100}%`, 
             height: '100%', 
             borderRadius: '3px',
-            background: (node.hlr_p ?? 1.0) >= 0.80 ? '#00e676' : (node.hlr_p ?? 1.0) >= 0.50 ? '#ff9100' : '#ff1744',
+            background: p >= 0.80 ? '#00e676' : p >= 0.50 ? '#ff9100' : '#ff1744',
             transition: 'width 0.5s ease' 
           }} />
         </div>

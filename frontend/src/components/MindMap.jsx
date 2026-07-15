@@ -31,6 +31,7 @@ const MindMap = ({ data, onNodeClick }) => {
     nodes: data.nodes || [],
     links: data.edges || []
   };
+  const getRetrievability = (node) => node?.fsrs_p ?? 1.0;
 
   return (
     <div className="graph-container">
@@ -41,7 +42,7 @@ const MindMap = ({ data, onNodeClick }) => {
         height={dimensions.height}
         nodeLabel="label"
         nodeColor={(node) => {
-          const p = node.hlr_p ?? 1.0;
+          const p = getRetrievability(node);
           return p >= 0.80 ? '#00e676' : p >= 0.50 ? '#ff9100' : '#ff1744';
         }}
         nodeRelSize={6}
@@ -49,8 +50,8 @@ const MindMap = ({ data, onNodeClick }) => {
           const sourceNode = graphData.nodes.find(n => n.id === link.source?.id || n.id === link.source);
           const targetNode = graphData.nodes.find(n => n.id === link.target?.id || n.id === link.target);
           
-          const pSource = sourceNode?.hlr_p ?? 1.0;
-          const pTarget = targetNode?.hlr_p ?? 1.0;
+          const pSource = getRetrievability(sourceNode);
+          const pTarget = getRetrievability(targetNode);
           const avgP = (pSource + pTarget) / 2;
           
           // Zayıflayan bağlar daha silik görünür
@@ -61,7 +62,7 @@ const MindMap = ({ data, onNodeClick }) => {
         linkDirectionalParticles={(link) => {
           const sourceNode = graphData.nodes.find(n => n.id === link.source?.id || n.id === link.source);
           const targetNode = graphData.nodes.find(n => n.id === link.target?.id || n.id === link.target);
-          const avgP = ((sourceNode?.hlr_p ?? 1.0) + (targetNode?.hlr_p ?? 1.0)) / 2;
+          const avgP = (getRetrievability(sourceNode) + getRetrievability(targetNode)) / 2;
           return avgP > 0.5 ? 2 : 0; // Çok unutulmuş bağlarda partikül hareketi dursun
         }}
         linkDirectionalParticleSpeed={0.005}
@@ -72,8 +73,8 @@ const MindMap = ({ data, onNodeClick }) => {
           const label = node.label;
           const fontSize = 12 / globalScale;
           
-          // hlr_p bazlı renklendirme
-          const p = node.hlr_p ?? 1.0;
+          // FSRS p bazlı renklendirme
+          const p = getRetrievability(node);
           let fillStyle = '#00e676';
           let shadowColor = '#69f0ae';
           let shadowBlur = 20;
