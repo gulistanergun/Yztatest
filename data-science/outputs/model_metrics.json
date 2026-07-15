@@ -1,0 +1,31 @@
+{
+  "train_rows": 1181,
+  "test_rows": 296,
+  "features": [
+    "difficulty",
+    "prior_exposures",
+    "successful_recalls",
+    "failed_recalls",
+    "prior_accuracy",
+    "motivation",
+    "prior_knowledge"
+  ],
+  "rule_based_baseline": {
+    "model": "rule_based_baseline",
+    "rows": 296,
+    "accuracy": 0.7601,
+    "log_loss": 0.5154,
+    "roc_auc": 0.8507,
+    "mean_predicted_recall": 0.4644
+  },
+  "hlr_inspired_model": {
+    "model": "hlr_inspired_model",
+    "rows": 296,
+    "accuracy": 0.777,
+    "log_loss": 0.4934,
+    "roc_auc": 0.862,
+    "mean_predicted_recall": 0.4857
+  },
+  "final_training_loss": 0.4831,
+  "loss_first_epoch": 0.5106
+}

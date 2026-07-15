@@ -3,6 +3,7 @@ import { X, Network } from 'lucide-react';
 
 const NodeDetailsPanel = ({ node, onClose }) => {
   if (!node) return null;
+  const p = node.fsrs_p ?? 1.0;
 
   return (
     <div className={`side-panel glass-panel ${node ? 'open' : ''}`}>
@@ -21,14 +22,28 @@ const NodeDetailsPanel = ({ node, onClose }) => {
       {typeof node.fsrs_p === 'number' && (
         <div className="info-group">
           <span className="info-label">Hatırlama Durumu</span>
-          <div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <span
-              className={`badge ${node.fsrs_p >= 0.8 ? 'badge-baslangic' : node.fsrs_p >= 0.5 ? 'badge-orta' : 'badge-ileri'}`}
-              title="FSRS/HLR modelinin tahmini hatırlama olasılığı"
+              className={`badge ${p >= 0.8 ? 'badge-baslangic' : p >= 0.5 ? 'badge-orta' : 'badge-ileri'}`}
+              title="FSRS modelinin tahmini hatırlama olasılığı"
             >
-              %{Math.round(node.fsrs_p * 100)}
-              {node.fsrs_p < 0.5 ? ' — tekrar gerekli' : node.fsrs_p < 0.8 ? ' — kritik eşik' : ' — sağlam'}
+              %{Math.round(p * 100)}
+              {p < 0.5 ? ' — tekrar gerekli' : p < 0.8 ? ' — kritik eşik' : ' — sağlam'}
             </span>
+            {typeof node.stability === 'number' && (
+              <span className="badge" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--sis)', border: '1px solid var(--cizgi)' }}>
+                Stabilite: {node.stability.toFixed(1)} gün
+              </span>
+            )}
+          </div>
+          <div style={{ marginTop: '8px', height: '6px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.08)' }}>
+            <div style={{
+              width: `${p * 100}%`,
+              height: '100%',
+              borderRadius: '3px',
+              background: p >= 0.8 ? 'var(--nane)' : p >= 0.5 ? 'var(--kor)' : 'var(--tehlike)',
+              transition: 'width 0.5s ease',
+            }} />
           </div>
         </div>
       )}

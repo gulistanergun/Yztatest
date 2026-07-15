@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from app.services.graph_service import GraphService
 from app.db.neo4j_client import get_neo4j_driver
 from app.core.logging import get_logger
@@ -63,3 +64,23 @@ async def delete_source(
 ):
     await service.delete_session(session_id)
     return {"status": "deleted", "session_id": session_id}
+
+
+class QuizSubmitPayload(BaseModel):
+    concept_name: str
+    score: float
+
+
+@router.post(
+    "/quiz/submit",
+    summary="Quiz Sonucunu Gonder",
+    description="Kullanicinin cozdugu quizin sonucuna gore FSRS parametrelerini (Stabilite/Zorluk) gunceller."
+)
+async def submit_quiz_result(
+    payload: QuizSubmitPayload,
+    service: GraphService = Depends(get_graph_service),
+):
+    return await service.update_concept_after_quiz(
+        concept_name=payload.concept_name,
+        score=payload.score
+    )
