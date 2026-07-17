@@ -6,7 +6,7 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.db.neo4j_client import get_neo4j_driver, create_constraints, close_neo4j_driver
 from app.db.qdrant_client import get_qdrant_client, ensure_collection_exists, close_qdrant_client
-from app.routers import ingest, graph, chat
+from app.routers import ingest, graph, chat, quiz
 from app.models.schemas import HealthResponse
 from app.services.graph_service import GraphService
 import asyncio
@@ -90,6 +90,7 @@ app.add_middleware(
 app.include_router(ingest.router)
 app.include_router(graph.router)
 app.include_router(chat.router)
+app.include_router(quiz.router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
