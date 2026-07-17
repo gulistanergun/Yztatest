@@ -1,3 +1,6 @@
+import math
+import random
+import uuid
 from typing import Optional
 
 from neo4j import AsyncDriver
@@ -41,8 +44,7 @@ KURALLAR:
    {distractor_pool}
    Bu kavramlar anlamsal olarak yakın olduğu için iyi çeldiricidir; ama doğru cevapla karıştırılamayacak
    kadar da net yanlış olmalılar.
-4. Soru zorluğunu kavramın hatırlama durumuna göre ayarla: hatırlama olasılığı {fsrs_p}
-   (düşükse temel hatırlama soruları, yüksekse uygulama/karşılaştırma soruları sor).
+4. Soru seviyesi (Bloom taksonomisi, kavramın FSRS durumuna göre hesaplandı): {question_style}
 5. Sorular Türkçe olsun; teknik terimler orijinal (İngilizce) kalabilir.
 6. correct_index her soruda farklı konumda olsun (hep 0 olmasın).
 
@@ -73,9 +75,17 @@ class QuizService:
        içerikler (vector) birleştirilir
     3. Çeldirici madenciliği: embedding uzayında hedefe yakın kavramlar + RELATED_TO komşuları
        çeldirici havuzu olarak LLM'e verilir
-    4. LLM (structured output) 3-5 çoktan seçmeli soru üretir
+    4. Zorluk kalibrasyonu: FSRS D/p değerlerine göre Bloom seviyesi (hatırlama/anlama/uygulama)
+    5. LLM (structured output) 3-5 çoktan seçmeli soru üretir
+    6. Cevaplanabilirlik kontrolü: cevabı bağlamla embedding-benzerliği düşük sorular elenir
+    7. Soru bankası: geçerli sorular (Question)-[:TESTS]->(Concept) olarak Neo4j'e yazılır;
+       bankada yeterli soru varsa LLM çağrısı yapılmadan bankadan servis edilir
     Skorlama Gülistan'ın POST /quiz/submit endpoint'inde (FSRS güncellemesi) kapanır.
     """
+
+    # Cevaplanabilirlik eşiği: soru+cevap embedding'inin bağlam parçalarıyla
+    # en yüksek kosinüs benzerliği bunun altındaysa soru kaynaktan türememiş sayılır
+    ANSWERABILITY_THRESHOLD = 0.30
 
     def __init__(self, neo4j_driver: AsyncDriver, qdrant_client: AsyncQdrantClient = None):
         self.neo4j = neo4j_driver
@@ -112,12 +122,18 @@ class QuizService:
             return [dict(r) for r in await result.data()]
 
     async def generate_quiz(
-        self, concept_name: Optional[str] = None, num_questions: int = 4
+        self,
+        concept_name: Optional[str] = None,
+        num_questions: int = 4,
+        force_new: bool = False,
     ) -> Optional[dict]:
         """
         Bir kavram için quiz üretir. concept_name verilmezse en zayıf kavram otomatik seçilir.
+        Bankada yeterli soru varsa (force_new=False iken) LLM'e gitmeden bankadan döner.
         Kavram bulunamazsa None, kaynak yoksa {"error": "no_sources", ...} döner.
         """
+        num_questions = max(3, min(5, num_questions))
+
         # 1. Hedef kavramı belirle (verilmediyse FSRS'e göre en riskli olan)
         if not concept_name:
             weak = await self.get_weak_concepts(limit=1)
@@ -130,6 +146,25 @@ class QuizService:
         concept = await self._fetch_concept_with_sources(concept_name)
         if concept is None:
             return None
+
+        # 2b. Soru bankası: yeterli soru birikmişse LLM maliyeti olmadan bankadan servis et
+        if not force_new:
+            bank = await self._load_question_bank(concept_name)
+            if len(bank) >= num_questions:
+                sampled = random.sample(bank, num_questions)
+                logger.info(
+                    f"[Quiz] '{concept_name}' bankadan servis edildi "
+                    f"({len(sampled)}/{len(bank)} soru, LLM çağrısı yok)"
+                )
+                return {
+                    "concept": concept_name,
+                    "topic": concept.get("topic"),
+                    "fsrs_p": concept.get("fsrs_p"),
+                    "questions": sampled,
+                    "sources_used": 0,
+                    "from_bank": True,
+                    "dropped_by_selfcheck": 0,
+                }
 
         # 3. Qdrant: anlamsal olarak yakın içerikler + çeldirici kavramlar (vector retrieval)
         extra_chunks, distractor_pool = await self._semantic_retrieval(
@@ -153,13 +188,15 @@ class QuizService:
 
         context_text = "\n\n---\n\n".join(context_parts)
 
-        # 5. LLM ile structured output soru üretimi
+        # 5. LLM ile structured output soru üretimi (Bloom seviyesi FSRS'ten kalibre edilir)
         try:
             raw: dict = await self.chain.ainvoke({
                 "concept": concept_name,
                 "topic": concept.get("topic") or "genel",
-                "num_questions": max(3, min(5, num_questions)),
-                "fsrs_p": concept.get("fsrs_p") if concept.get("fsrs_p") is not None else 1.0,
+                "num_questions": num_questions,
+                "question_style": self._bloom_guidance(
+                    concept.get("fsrs_d"), concept.get("fsrs_p")
+                ),
                 "distractor_pool": ", ".join(distractor_pool) if distractor_pool else "(havuz boş — makul çeldiriciler üret)",
                 "context": context_text,
             })
@@ -168,7 +205,7 @@ class QuizService:
             logger.error(f"[Quiz] LLM soru üretim hatası ({concept_name}): {e}", exc_info=True)
             return {"error": "generation_failed", "concept": concept_name}
 
-        # 6. Doğrulama: bozuk soruları ele (4 şıktan az / correct_index taşmış)
+        # 6. Yapısal doğrulama: bozuk soruları ele (4 şıktan az / correct_index taşmış)
         valid_questions = [
             q for q in quiz.questions
             if len(q.options) == 4 and 0 <= q.correct_index < 4
@@ -176,17 +213,142 @@ class QuizService:
         if not valid_questions:
             return {"error": "generation_failed", "concept": concept_name}
 
+        # 7. Cevaplanabilirlik kontrolü: cevabı bağlamdan doğrulanamayan sorular elenir
+        valid_questions, dropped = await self._filter_answerable(valid_questions, context_parts)
+
+        # 8. Soru bankasına yaz (sonraki quizler LLM'siz servis edilebilsin)
+        question_dicts = [q.model_dump() for q in valid_questions]
+        await self._save_questions_to_bank(concept_name, question_dicts)
+
         logger.info(
             f"[Quiz] '{concept_name}' için {len(valid_questions)} soru üretildi "
-            f"(çeldirici havuzu: {len(distractor_pool)}, kaynak: {len(context_parts)})"
+            f"(çeldirici havuzu: {len(distractor_pool)}, kaynak: {len(context_parts)}, "
+            f"self-check elemesi: {dropped})"
         )
         return {
             "concept": concept_name,
             "topic": concept.get("topic"),
             "fsrs_p": concept.get("fsrs_p"),
-            "questions": [q.model_dump() for q in valid_questions],
+            "questions": question_dicts,
             "sources_used": len(context_parts),
+            "from_bank": False,
+            "dropped_by_selfcheck": dropped,
         }
+
+    @staticmethod
+    def _bloom_guidance(fsrs_d: Optional[float], fsrs_p: Optional[float]) -> str:
+        """
+        FSRS Zorluk (D, 1-10) ve hatırlama olasılığına (p) göre Bloom taksonomisi
+        seviyesini belirler. Unutulmak üzere olan kavramda önce temel hatırlama
+        pekiştirilir; sağlam ve zor kavramlarda uygulama/analiz sorulur.
+        """
+        if fsrs_p is not None and fsrs_p < 0.5:
+            return (
+                "Kavram unutulmak üzere (p<0.5): Bloom 'hatırlama' seviyesinde temel sorular sor "
+                "(tanım, temel özellik, 'X nedir/ne işe yarar')."
+            )
+        d = fsrs_d if fsrs_d is not None else 5.5
+        if d <= 4.0:
+            return "Kolay kavram (D<=4): Bloom 'hatırlama/anlama' seviyesi (tanım + basit neden/nasıl)."
+        if d <= 7.0:
+            return "Orta kavram (4<D<=7): Bloom 'anlama/uygulama' karışımı (neden/nasıl + basit senaryo)."
+        return (
+            "Zor kavram (D>7): Bloom 'uygulama/analiz' seviyesi "
+            "(senaryo verip hangi araç/yaklaşım seçilir, iki kavramı karşılaştırma)."
+        )
+
+    async def _filter_answerable(
+        self, questions: list[QuizQuestion], context_parts: list[str]
+    ) -> tuple[list[QuizQuestion], int]:
+        """
+        Cevaplanabilirlik self-check'i: her sorunun 'soru + doğru cevap' metni,
+        bağlam parçalarıyla embedding kosinüs benzerliğine sokulur. En iyi benzerliği
+        eşiğin altında kalan soru kaynaktan türememiş (hallüsinasyon riski) sayılıp elenir.
+        Tüm sorular elenirse gate pas geçilir (boş quiz dönmek daha kötü UX).
+        """
+        try:
+            ctx_vectors = await self.embeddings.aembed_documents(context_parts)
+            q_texts = [
+                f"{q.question} Cevap: {q.options[q.correct_index]}" for q in questions
+            ]
+            q_vectors = await self.embeddings.aembed_documents(q_texts)
+        except Exception as e:
+            logger.error(f"[Quiz] Self-check embedding hatası, gate atlandı: {e}", exc_info=True)
+            return questions, 0
+
+        def cosine(a: list[float], b: list[float]) -> float:
+            dot = sum(x * y for x, y in zip(a, b))
+            norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
+            return dot / norm if norm > 0 else 0.0
+
+        kept: list[QuizQuestion] = []
+        dropped = 0
+        for q, qv in zip(questions, q_vectors):
+            best = max(cosine(qv, cv) for cv in ctx_vectors)
+            if best >= self.ANSWERABILITY_THRESHOLD:
+                kept.append(q)
+            else:
+                dropped += 1
+                logger.warning(
+                    f"[Quiz] Self-check elemesi (benzerlik {best:.2f} < "
+                    f"{self.ANSWERABILITY_THRESHOLD}): {q.question[:80]}"
+                )
+
+        if not kept:
+            logger.warning("[Quiz] Self-check tüm soruları eledi; gate pas geçildi.")
+            return questions, 0
+        return kept, dropped
+
+    async def _load_question_bank(self, concept_name: str) -> list[dict]:
+        """Kavrama bağlı (Question)-[:TESTS]->(Concept) sorularını bankadan çeker."""
+        async with self.neo4j.session() as session:
+            result = await session.run(
+                """
+                MATCH (q:Question)-[:TESTS]->(c:Concept {name: $name})
+                RETURN q.question      AS question,
+                       q.options       AS options,
+                       q.correct_index AS correct_index,
+                       q.explanation   AS explanation
+                ORDER BY q.created_at DESC
+                LIMIT 30
+                """,
+                name=concept_name,
+            )
+            rows = [dict(r) for r in await result.data()]
+        # Bozuk kayıtları (eksik şık vb.) bankadan servis etme
+        return [
+            r for r in rows
+            if r.get("options") and len(r["options"]) == 4
+            and r.get("correct_index") is not None and 0 <= r["correct_index"] < 4
+        ]
+
+    async def _save_questions_to_bank(self, concept_name: str, questions: list[dict]):
+        """Üretilen soruları (Question)-[:TESTS]->(Concept) düğümü olarak saklar (soru metnine göre tekilleştirilir)."""
+        try:
+            async with self.neo4j.session() as session:
+                for q in questions:
+                    await session.run(
+                        """
+                        MATCH (c:Concept {name: $concept})
+                        MERGE (q:Question {question: $question})
+                        ON CREATE SET q.id            = $id,
+                                      q.options       = $options,
+                                      q.correct_index = $correct_index,
+                                      q.explanation   = $explanation,
+                                      q.created_at    = datetime()
+                        MERGE (q)-[:TESTS]->(c)
+                        """,
+                        concept=concept_name,
+                        question=q["question"],
+                        id=str(uuid.uuid4()),
+                        options=q["options"],
+                        correct_index=q["correct_index"],
+                        explanation=q["explanation"],
+                    )
+            logger.debug(f"[Quiz] {len(questions)} soru bankaya yazıldı ({concept_name}).")
+        except Exception as e:
+            # Banka yazımı kritik değil; quiz yine de kullanıcıya döner
+            logger.error(f"[Quiz] Soru bankası yazma hatası: {e}", exc_info=True)
 
     async def _fetch_concept_with_sources(self, name: str) -> Optional[dict]:
         """Kavramı, RELATED_TO komşularını ve bağlı RawSession içeriklerini çeker."""
@@ -199,6 +361,7 @@ class QuizService:
                 RETURN c.name  AS name,
                        c.topic AS topic,
                        c.fsrs_p AS fsrs_p,
+                       c.fsrs_d AS fsrs_d,
                        [x IN collect(DISTINCT n.name) WHERE x IS NOT NULL] AS neighbors,
                        [s IN collect(DISTINCT {
                             question: rs.question,

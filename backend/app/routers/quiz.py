@@ -24,6 +24,10 @@ class QuizGenerateRequest(BaseModel):
         description="Quiz üretilecek kavram. Boş bırakılırsa fsrs_p'si en düşük (unutulmak üzere olan) kavram otomatik seçilir.",
     )
     num_questions: int = Field(default=4, ge=3, le=5, description="Soru sayısı (3-5)")
+    force_new: bool = Field(
+        default=False,
+        description="True ise soru bankası atlanır ve LLM ile taze soru üretilir.",
+    )
 
 
 @router.post(
@@ -43,6 +47,7 @@ async def generate_quiz(
     result = await service.generate_quiz(
         concept_name=payload.concept_name,
         num_questions=payload.num_questions,
+        force_new=payload.force_new,
     )
 
     if result is None:
