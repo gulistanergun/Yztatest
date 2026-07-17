@@ -475,3 +475,32 @@ class GraphService:
             record = await result.single()
             return record["updated_count"] if record else 0
 
+async def import_graph_data(self, graph_data: dict):
+        """Dışarıdan gelen JSON verisini Neo4j'ye MERGE ile ekler."""
+        nodes = graph_data.get("nodes", [])
+        edges = graph_data.get("edges", [])
+
+        async with self.neo4j_driver.session() as session:
+            # 1. Düğümleri güvenli bir şekilde ekle
+            for node in nodes:
+                await session.run("""
+                    MERGE (c:Concept {name: $name})
+                    SET c.description = $description,
+                        c.group = $group
+                """, {
+                    "name": node.get("id"),
+                    "description": node.get("description", ""),
+                    "group": node.get("group", 1)
+                })
+
+            # 2. İlişkileri güvenli bir şekilde kur
+            for edge in edges:
+                await session.run("""
+                    MATCH (source:Concept {name: $source_name})
+                    MATCH (target:Concept {name: $target_name})
+                    MERGE (source)-[r:RELATES_TO]->(target)
+                """, {
+                    "source_name": edge.get("source"),
+                    "target_name": edge.get("target")
+                })
+        return True
