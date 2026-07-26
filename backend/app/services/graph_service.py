@@ -318,7 +318,20 @@ class GraphService:
                 new_p=updated_state["retrievability"],
                 elapsed_seconds=elapsed_seconds,
             )
-            
+
+            # 4. STUDIED gecmisini guncelle (User -> Concept iliskisi)
+            await session.run(
+                """
+                MERGE (u:User {id: 'local_user'})
+                MERGE (u)-[r:STUDIED]->(c:Concept {name: $name})
+                ON CREATE SET r.first_studied = datetime(), r.attempts = 1
+                ON MATCH SET r.attempts = coalesce(r.attempts, 0) + 1
+                SET r.last_score = $score, r.last_studied = datetime()
+                """,
+                name=concept_name,
+                score=score,
+            )
+
             logger.info(
                 f"[GraphService] '{concept_name}' kavramı quiz sonrasında guncellendi | "
                 f"Skor: {score} | "
