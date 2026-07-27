@@ -33,6 +33,10 @@ frontend/dist/
 *.log
 npm-debug.log*
 
+# ---- Yapay Zeka Asistan Dosyaları (repoya asla girmemeli) ----
+.agents/
+docs/superpowers/
+
 # ---- IDE & Editörler ----
 .vscode/
 .idea/
