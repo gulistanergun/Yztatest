@@ -10,28 +10,32 @@ from app.routers import ingest, graph, chat, quiz
 from app.models.schemas import HealthResponse
 from app.services.graph_service import GraphService
 import asyncio
+from app.routers import ingest, graph, chat, quiz, history
 
 settings = get_settings()
 logger = get_logger(__name__)
 
 async def background_processor():
-    """Arka planda her 10 saniyede bir bekleyen verileri isler ve unutma eğrisini günceller."""
-    logger.info("[AutoProcessor] Otonom isleyici basladi. Her 10 saniyede bir tarama yapilacak.")
+    """Arka planda bekleyen verileri çok yavaş ve güvenli bir şekilde işler (Free Tier uyumlu)."""
+    logger.info("[AutoProcessor] Otonom işleyici başladı. Limitlere uygun tarama yapılacak.")
     while True:
         try:
-            await asyncio.sleep(10)  # 10 saniye bekle
+            # 1. Her işlem arası tam 20 saniye bekle (Dakikada en fazla 3 tur döner)
+            await asyncio.sleep(20) 
+            
             neo4j_driver = await get_neo4j_driver()
             qdrant_client = await get_qdrant_client()
             service = GraphService(neo4j_driver=neo4j_driver, qdrant_client=qdrant_client)
             
-            # 1. Bekleyen oturumları işle (kavram çıkarımı)
-            stats = await service.process_pending_sessions(batch_size=20)
+            # 2. Tek seferde SADECE 1 sohbeti işle. 
+            # Böylece ilişkiler ve kavramlar çıkarılırken API ASLA boğulmaz.
+            stats = await service.process_pending_sessions(batch_size=1)
             
-            # 2. Unutma Eğrisi (Forgetting Curve) güncellemesini yap
+            # 3. Unutma Eğrisi (Forgetting Curve) güncellemesini yap
             decay_count = await service.update_all_retrievability()
             
             if stats["processed"] > 0 or stats["skipped"] > 0 or stats["errors"] > 0 or decay_count > 0:
-                logger.info(f"[AutoProcessor] Islem tamamlandi: {stats} | {decay_count} kavram guncellendi.")
+                logger.info(f"[AutoProcessor] İşlem tamamlandı: {stats} | {decay_count} kavram güncellendi.")
             else:
                 logger.debug("[AutoProcessor] Bekleyen oturum yok.")
         except asyncio.CancelledError:
@@ -91,6 +95,8 @@ app.include_router(ingest.router)
 app.include_router(graph.router)
 app.include_router(chat.router)
 app.include_router(quiz.router)
+app.include_router(history.router)
+
 
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
