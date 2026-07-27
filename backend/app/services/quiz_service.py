@@ -102,8 +102,11 @@ class QuizService:
     async def get_weak_concepts(self, limit: int = 5) -> list[dict]:
         """
         FSRS'e göre en riskli (fsrs_p düşük) ve en az 1 kaynağı olan kavramları döner.
-        Frontend "günün quizi" önerisi için kullanır.
+        Frontend "günün quizi" önerisi ve Chrome eklentisinin pasif hatırlatma
+        kutucuğu için kullanır (bkz. extension/passive_prompt.js).
         """
+        from datetime import datetime, timezone
+
         async with self.neo4j.session() as session:
             result = await session.run(
                 """
@@ -113,13 +116,26 @@ class QuizService:
                        c.topic AS topic,
                        coalesce(c.fsrs_p, 1.0) AS fsrs_p,
                        c.fsrs_s AS stability,
+                       c.last_studied AS last_studied,
                        source_count
                 ORDER BY fsrs_p ASC
                 LIMIT $limit
                 """,
                 limit=limit,
             )
-            return [dict(r) for r in await result.data()]
+            rows = [dict(r) for r in await result.data()]
+
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            last_studied = row.pop("last_studied", None)
+            days_since = None
+            if last_studied is not None:
+                studied_dt = last_studied.to_native()
+                if studied_dt.tzinfo is None:
+                    studied_dt = studied_dt.replace(tzinfo=timezone.utc)
+                days_since = round((now - studied_dt).total_seconds() / 86400, 1)
+            row["days_since_last_studied"] = days_since
+        return rows
 
     async def generate_quiz(
         self,
@@ -147,6 +163,10 @@ class QuizService:
         if concept is None:
             return None
 
+        # Bu ikisi hem banka hem taze üretim yolunda aynı: "neden bu soru?" şeffaflığı için
+        own_sources_count = len(concept.get("sources") or [])
+        difficulty_reason = self._bloom_guidance(concept.get("fsrs_d"), concept.get("fsrs_p"))
+
         # 2b. Soru bankası: yeterli soru birikmişse LLM maliyeti olmadan bankadan servis et
         if not force_new:
             bank = await self._load_question_bank(concept_name)
@@ -160,6 +180,9 @@ class QuizService:
                     "concept": concept_name,
                     "topic": concept.get("topic"),
                     "fsrs_p": concept.get("fsrs_p"),
+                    "fsrs_d": concept.get("fsrs_d"),
+                    "difficulty_reason": difficulty_reason,
+                    "own_sources_count": own_sources_count,
                     "questions": sampled,
                     "sources_used": 0,
                     "from_bank": True,
@@ -194,9 +217,7 @@ class QuizService:
                 "concept": concept_name,
                 "topic": concept.get("topic") or "genel",
                 "num_questions": num_questions,
-                "question_style": self._bloom_guidance(
-                    concept.get("fsrs_d"), concept.get("fsrs_p")
-                ),
+                "question_style": difficulty_reason,
                 "distractor_pool": ", ".join(distractor_pool) if distractor_pool else "(havuz boş — makul çeldiriciler üret)",
                 "context": context_text,
             })
@@ -229,6 +250,9 @@ class QuizService:
             "concept": concept_name,
             "topic": concept.get("topic"),
             "fsrs_p": concept.get("fsrs_p"),
+            "fsrs_d": concept.get("fsrs_d"),
+            "difficulty_reason": difficulty_reason,
+            "own_sources_count": own_sources_count,
             "questions": question_dicts,
             "sources_used": len(context_parts),
             "from_bank": False,

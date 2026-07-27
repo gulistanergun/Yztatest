@@ -94,6 +94,20 @@ async def submit_quiz_result(
 
 from typing import List, Dict, Any
 
+@router.get(
+    "/quiz/history",
+    summary="Quiz Gecmisi",
+    description="Kullanicinin gecmiste cozdugu quizlerin listesini (en yeniden eskiye) dondurur.",
+)
+async def get_quiz_history(
+    limit: int = 50,
+    concept: str | None = None,
+    service: GraphService = Depends(get_graph_service),
+):
+    history = await service.get_quiz_history(limit=limit, concept=concept)
+    return {"history": history, "total": len(history)}
+
+
 class ImportPayload(BaseModel):
     nodes: List[Dict[str, Any]]
     edges: List[Dict[str, Any]]
