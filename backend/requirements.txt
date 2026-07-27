@@ -12,7 +12,7 @@ langchain==0.3.7
 langchain-huggingface==0.2.0
 sentence-transformers==3.3.1
 # Kavram cikarimi + RAG cevap uretimi (Gemini) hala bunu kullaniyor
-langchain-google-genai==4.2.7
+langchain-google-genai==2.1.5
 
 # Yardımcı
 python-dotenv==1.0.1

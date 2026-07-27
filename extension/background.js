@@ -93,8 +93,50 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     sendResponse({ status: "queued" });
   }
+
+  if (message.type === "OPEN_QUIZ") {
+    const url = `${globalThis.LS_CONFIG.FRONTEND_URL}/?quiz=${encodeURIComponent(message.concept)}`;
+    chrome.tabs.create({ url });
+    sendResponse({ status: "opened" });
+  }
+
   return true;
 });
+
+// ============================================================
+// Riskli (unutulmaya yüz tutmuş) kavramları periyodik çekme
+// passive_prompt.js sayfa taramasında bu listeyi kullanır.
+// ============================================================
+async function refreshAtRiskConcepts() {
+  try {
+    const response = await fetch(`${globalThis.LS_CONFIG.RECOMMENDATIONS_URL}?limit=10`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const threshold = globalThis.LS_CONFIG.AT_RISK_THRESHOLD;
+    const atRisk = (data.concepts || [])
+      .filter((c) => typeof c.fsrs_p === "number" && c.fsrs_p < threshold)
+      .map((c) => ({
+        name: c.name,
+        fsrs_p: c.fsrs_p,
+        days_since_last_studied: c.days_since_last_studied,
+      }));
+    await chrome.storage.local.set({ atRiskConcepts: atRisk });
+    console.log(`[LearnSphere BG] 🎯 ${atRisk.length} riskli kavram guncellendi.`);
+  } catch (e) {
+    console.warn("[LearnSphere BG] Riskli kavram listesi cekilemedi:", e.message);
+  }
+}
+
+const AT_RISK_ALARM = "ls-refresh-at-risk";
+chrome.alarms.create(AT_RISK_ALARM, {
+  periodInMinutes: globalThis.LS_CONFIG.AT_RISK_REFRESH_MINUTES,
+});
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === AT_RISK_ALARM) refreshAtRiskConcepts();
+});
+
+// Extension yüklendiğinde/service worker uyandığında da bir kere çek
+refreshAtRiskConcepts();
 
 // Service worker her uyandığında bekleyen kuyruğu işlemeyi dene
 restoreQueue().then(processQueue);

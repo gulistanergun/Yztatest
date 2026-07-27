@@ -1,5 +1,6 @@
 import React from 'react';
-import { X, Network, Compass } from 'lucide-react';
+import { X, Network, Compass, Brain } from 'lucide-react';
+import RetentionSparkline from './RetentionSparkline';
 
 const HEALTH_BADGE_CLASS = {
   strong: 'badge-baslangic',
@@ -7,7 +8,7 @@ const HEALTH_BADGE_CLASS = {
   critical: 'badge-ileri',
 };
 
-const NodeDetailsPanel = ({ node, onClose, onShowPath, learningPath, onClearPath, goalResult, onClearGoal }) => {
+const NodeDetailsPanel = ({ node, onClose, onShowPath, learningPath, onClearPath, goalResult, onClearGoal, onStartQuiz }) => {
   if (!node) return null;
   const p = node.fsrs_p ?? 1.0;
   const canShowPath = !node.isCluster && !node.isVirtual;
@@ -25,31 +26,44 @@ const NodeDetailsPanel = ({ node, onClose, onShowPath, learningPath, onClearPath
 
       {canShowPath && (
         <div className="info-group">
-          {!pathForThisNode ? (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button
-              onClick={() => onShowPath(node.label)}
+              onClick={() => onStartQuiz(node.label)}
               style={{
                 display: 'flex', alignItems: 'center', gap: '6px',
-                background: 'rgba(255,180,84,0.12)', color: 'var(--kor)',
-                border: '1px solid rgba(255,180,84,0.3)', borderRadius: '6px',
+                background: 'rgba(110,231,216,0.12)', color: 'var(--nane)',
+                border: '1px solid rgba(110,231,216,0.3)', borderRadius: '6px',
                 padding: '6px 12px', cursor: 'pointer', fontSize: '13px', fontWeight: 600,
               }}
             >
-              <Compass size={14} /> Bu Kavrama Giden Yolu Göster
+              <Brain size={14} /> Quiz Çöz
             </button>
-          ) : (
-            <button
-              onClick={onClearPath}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '6px',
-                background: 'rgba(255,255,255,0.06)', color: 'var(--sis)',
-                border: '1px solid var(--cizgi)', borderRadius: '6px',
-                padding: '6px 12px', cursor: 'pointer', fontSize: '13px', fontWeight: 600,
-              }}
-            >
-              <X size={14} /> Yolu Kapat
-            </button>
-          )}
+            {!pathForThisNode ? (
+              <button
+                onClick={() => onShowPath(node.label)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  background: 'rgba(255,180,84,0.12)', color: 'var(--kor)',
+                  border: '1px solid rgba(255,180,84,0.3)', borderRadius: '6px',
+                  padding: '6px 12px', cursor: 'pointer', fontSize: '13px', fontWeight: 600,
+                }}
+              >
+                <Compass size={14} /> Bu Kavrama Giden Yolu Göster
+              </button>
+            ) : (
+              <button
+                onClick={onClearPath}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  background: 'rgba(255,255,255,0.06)', color: 'var(--sis)',
+                  border: '1px solid var(--cizgi)', borderRadius: '6px',
+                  padding: '6px 12px', cursor: 'pointer', fontSize: '13px', fontWeight: 600,
+                }}
+              >
+                <X size={14} /> Yolu Kapat
+              </button>
+            )}
+          </div>
 
           {pathForThisNode && !pathForThisNode.found && (
             <p className="text-sm text-muted" style={{ marginTop: '8px' }}>
@@ -150,6 +164,12 @@ const NodeDetailsPanel = ({ node, onClose, onShowPath, learningPath, onClearPath
               transition: 'width 0.5s ease',
             }} />
           </div>
+          {canShowPath && (
+            <div style={{ marginTop: '10px' }}>
+              <span className="info-label" style={{ fontSize: '11px' }}>Hatırlama Geçmişi</span>
+              <RetentionSparkline concept={node.label} />
+            </div>
+          )}
         </div>
       )}
 

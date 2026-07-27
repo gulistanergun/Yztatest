@@ -7,11 +7,23 @@ const LS_CONFIG = {
   // FastAPI Backend — direkt bağlantı
   BACKEND_URL: "http://127.0.0.1:8080/api/v1/ingest",
 
+  // Riskli (unutulmaya yüz tutmuş) kavramları çekmek için
+  RECOMMENDATIONS_URL: "http://127.0.0.1:8080/api/v1/quiz/recommendations",
+
+  // Pasif hatırlatma kutucuğundaki "Quize Başla" React uygulamasını burada açar
+  FRONTEND_URL: "http://localhost:5173",
+
   // Kaç ms sonra veriyi gönderelim (streaming bittikten sonra)
   DEBOUNCE_DELAY_MS: 2500,
 
   // Aynı konuşmayı kaç dakikada bir tekrar gönderebiliriz
   RESEND_COOLDOWN_MINUTES: 5,
+
+  // Riskli kavram listesini kaç dakikada bir tazeleyelim
+  AT_RISK_REFRESH_MINUTES: 60,
+
+  // fsrs_p bu eşiğin altındaysa "riskte" sayılır (bkz. frontend App.jsx stats.cooling)
+  AT_RISK_THRESHOLD: 0.5,
 
   // Debug modunda console logları aktif
   DEBUG: true,

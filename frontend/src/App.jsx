@@ -3,6 +3,8 @@ import MindMap from './components/MindMap';
 import NodeDetailsPanel from './components/NodeDetailsPanel';
 import Sidebar from './components/Sidebar';
 import ChatBar from './components/ChatBar';
+import QuizModal from './components/QuizModal';
+import HistoryPanel from './components/HistoryPanel';
 
 function App() {
   const [fullGraphData, setFullGraphData] = useState({ nodes: [], edges: [] });
@@ -18,6 +20,10 @@ function App() {
   const [goalResult, setGoalResult] = useState(null); // Serbest metin öğrenme hedefi (haritada olmayan) sonucu
   const [goalInputOpen, setGoalInputOpen] = useState(false);
   const [goalInputValue, setGoalInputValue] = useState('');
+  const [quizConcept, setQuizConcept] = useState(null);
+  const [quizQueue, setQuizQueue] = useState([]); // "Bugünün Quizi" oturumunda sırada bekleyen kavramlar
+  const quizJustCompletedRef = useRef(false); // tamamlanma ile erken kapatmayı ayırt etmek için
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Dosya seçici için referans
   const fileInputRef = useRef(null);
@@ -37,6 +43,17 @@ function App() {
 
   useEffect(() => {
     fetchGraph();
+  }, []);
+
+  // Chrome eklentisinin pasif hatırlatma kutucuğundan "?quiz=Kavram" ile açılırsa
+  // grafiğin yüklenmesini beklemeden quiz'i doğrudan başlat (QuizModal kendi verisini çeker).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const quizParam = params.get('quiz');
+    if (quizParam) {
+      handleStartQuiz(quizParam);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   }, []);
 
   const handleSourceSelect = (source) => {
@@ -186,6 +203,51 @@ function App() {
 
   const handleClearPath = () => setLearningPath(null);
   const handleClearGoal = () => setGoalResult(null);
+
+  const handleStartQuiz = (conceptName) => {
+    quizJustCompletedRef.current = false;
+    setQuizQueue([]); // tekil kavram quizi; "Bugünün Quizi" sırasını geçersiz kılar
+    setQuizConcept(conceptName);
+  };
+
+  const handleStartTodayQuiz = async () => {
+    try {
+      const response = await fetch('http://127.0.0.1:8080/api/v1/quiz/recommendations?limit=5');
+      const data = await response.json();
+      if (data.concepts && data.concepts.length > 0) {
+        const names = data.concepts.map(c => c.name);
+        setQuizQueue(names.slice(1)); // ilk kavram hemen açılır, geri kalanı sırada bekler
+        setQuizConcept(names[0]);
+      } else {
+        alert('Henüz quiz üretecek kavram yok.');
+      }
+    } catch (error) {
+      console.error('Quiz onerisi alinamadi:', error);
+      alert('Sunucuya ulaşılamadı.');
+    }
+  };
+
+  // Quiz tamamlandığında (skor gönderildiğinde) tetiklenir; erken kapatmadan (X) ayırt etmek için bayrak kullanılır.
+  const handleQuizCompleted = () => {
+    quizJustCompletedRef.current = true;
+    fetchGraph();
+  };
+
+  // QuizModal her zaman onCompleted'dan hemen sonra onClose çağırır. Eğer bu bir
+  // "Bugünün Quizi" oturumuysa ve sırada kavram varsa, kapatmak yerine sıradakine geçilir.
+  // Kullanıcı quiz bitmeden (X ile) çıkarsa oturum tamamen sonlanır.
+  const handleQuizClose = () => {
+    if (quizJustCompletedRef.current && quizQueue.length > 0) {
+      quizJustCompletedRef.current = false;
+      const [next, ...rest] = quizQueue;
+      setQuizQueue(rest);
+      setQuizConcept(next);
+      return;
+    }
+    quizJustCompletedRef.current = false;
+    setQuizQueue([]);
+    setQuizConcept(null);
+  };
 
   // Serbest metin öğrenme hedefi (harita üzerinde henüz olmayabilecek bir kavram).
   const handleResolveGoal = async (goalText) => {
@@ -576,6 +638,18 @@ function App() {
               </button>
             )}
             <button
+              onClick={handleStartTodayQuiz}
+              style={{ background: '#374151', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}
+              title="En riskli kavramla hemen bir quiz baslat">
+              🎯 Bugünün Quizi
+            </button>
+            <button
+              onClick={() => setHistoryOpen(true)}
+              style={{ background: '#374151', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}
+              title="Geçmişte çözülen quizlerin listesi">
+              📜 Geçmiş
+            </button>
+            <button
               onClick={() => setGoalInputOpen(prev => !prev)}
               style={{ background: goalInputOpen ? '#10B981' : '#374151', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}
               title="Haritada henüz olmayan bir konu için öğrenme yolu iste">
@@ -660,7 +734,27 @@ function App() {
         onClearPath={handleClearPath}
         goalResult={goalResult}
         onClearGoal={handleClearGoal}
+        onStartQuiz={handleStartQuiz}
       />
+
+      {quizConcept && (
+        <>
+          <QuizModal
+            concept={quizConcept}
+            onClose={handleQuizClose}
+            onCompleted={handleQuizCompleted}
+          />
+          {quizQueue.length > 0 && (
+            <div className="quiz-queue-badge">
+              Bugünün Quizi — sırada {quizQueue.length} kavram daha var
+            </div>
+          )}
+        </>
+      )}
+
+      {historyOpen && (
+        <HistoryPanel onClose={() => setHistoryOpen(false)} />
+      )}
     </div>
   );
 }

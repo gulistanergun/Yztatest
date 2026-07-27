@@ -1,4 +1,5 @@
 import asyncio
+from typing import Optional
 from neo4j import AsyncDriver
 from app.services.extraction_service import ConceptExtractor, ExtractionResult
 from app.core.logging import get_logger
@@ -320,16 +321,46 @@ class GraphService:
             )
 
             # 4. STUDIED gecmisini guncelle (User -> Concept iliskisi)
+            # NOT: (c:Concept {name: $name}) ilişki pattern'i icinde inline MERGE edilirse,
+            # ayni isimli Concept zaten varken bile MERGE tum path'i eslesmedigi icin
+            # yeni bir node yaratmaya calisir ve unique constraint'e carpar. Bu yuzden
+            # Concept node'u once ayri bir MATCH ile baglaniyor.
             await session.run(
                 """
+                MATCH (c:Concept {name: $name})
                 MERGE (u:User {id: 'local_user'})
-                MERGE (u)-[r:STUDIED]->(c:Concept {name: $name})
+                MERGE (u)-[r:STUDIED]->(c)
                 ON CREATE SET r.first_studied = datetime(), r.attempts = 1
                 ON MATCH SET r.attempts = coalesce(r.attempts, 0) + 1
                 SET r.last_score = $score, r.last_studied = datetime()
                 """,
                 name=concept_name,
                 score=score,
+            )
+
+            # 5. Her denemeyi ayri bir QuizAttempt kaydi olarak tut (gecmis paneli icin).
+            # STUDIED iliskisi sadece son denemeyi tuttugu icin trend/gecmis gosterilemiyordu.
+            await session.run(
+                """
+                MATCH (c:Concept {name: $name})
+                MERGE (u:User {id: 'local_user'})
+                CREATE (qa:QuizAttempt {
+                    id: $id,
+                    score: $score,
+                    timestamp: datetime(),
+                    new_difficulty: $new_d,
+                    new_stability: $new_s,
+                    new_retrievability: $new_p
+                })
+                CREATE (u)-[:ATTEMPTED]->(qa)
+                CREATE (qa)-[:OF]->(c)
+                """,
+                name=concept_name,
+                id=str(uuid.uuid4()),
+                score=score,
+                new_d=updated_state["difficulty"],
+                new_s=updated_state["stability"],
+                new_p=updated_state["retrievability"],
             )
 
             logger.info(
@@ -345,6 +376,44 @@ class GraphService:
                 "new_stability": updated_state["stability"],
                 "new_retrievability": updated_state["retrievability"]
             }
+
+    async def get_quiz_history(self, limit: int = 50, concept: Optional[str] = None) -> list[dict]:
+        """
+        Kullanıcının geçmiş quiz denemelerini (en yeniden eskiye) döndürür.
+        concept verilirse sadece o kavrama ait denemeler (unutma eğrisi grafiği için) döner.
+        Frontend'de 'Geçmiş' panelinde ve kavram detayındaki sparkline'da gösterilir.
+        """
+        async with self.neo4j.session() as session:
+            result = await session.run(
+                """
+                MATCH (u:User {id: 'local_user'})-[:ATTEMPTED]->(qa:QuizAttempt)-[:OF]->(c:Concept)
+                WHERE $concept IS NULL OR c.name = $concept
+                RETURN qa.id                  AS id,
+                       c.name                 AS concept,
+                       qa.score               AS score,
+                       qa.timestamp           AS timestamp,
+                       qa.new_retrievability  AS new_retrievability,
+                       qa.new_stability       AS new_stability
+                ORDER BY qa.timestamp DESC
+                LIMIT $limit
+                """,
+                limit=max(1, min(200, limit)),
+                concept=concept,
+            )
+            rows = await result.data()
+
+        history = []
+        for r in rows:
+            ts = r.get("timestamp")
+            history.append({
+                "id": r["id"],
+                "concept": r["concept"],
+                "score": r["score"],
+                "timestamp": ts.iso_format() if ts else None,
+                "new_retrievability": r.get("new_retrievability"),
+                "new_stability": r.get("new_stability"),
+            })
+        return history
 
     async def get_graph_data(self) -> dict:
         """
@@ -733,31 +802,77 @@ class GraphService:
         }
 
     async def import_graph_data(self, graph_data: dict):
-        """Dışarıdan gelen JSON verisini Neo4j'ye MERGE ile ekler."""
+        """
+        Dışarıdan gelen JSON verisini (İçe Aktar / örnek veri seti) Neo4j'ye MERGE ile ekler.
+        Beklenen şekil, /api/v1/graph export formatıyla aynı:
+        nodes: [{id, topic, difficulty, fsrs_p, stability, created_at}], edges: [{source, target}]
+
+        NOT: Önceki sürüm kenarları 'RELATES_TO' ilişki tipiyle yazıyordu ama harita
+        (get_graph_data) 'RELATED_TO' arıyordu — içe aktarılan kenarlar haritada hiç
+        görünmüyordu. Ayrıca topic/difficulty/fsrs_p hiç yazılmadığı için içe aktarılan
+        kavramlar hep 'Genel' kümesinde ve renksiz (fsrs_p=1.0 sabit) kalıyordu.
+        """
+        from datetime import datetime, timezone
+
         nodes = graph_data.get("nodes", [])
         edges = graph_data.get("edges", [])
 
         async with self.neo4j.session() as session:
-            # 1. Düğümleri güvenli bir şekilde ekle
+            # 1. Düğümleri, FSRS durumlarını koruyarak ekle
             for node in nodes:
-                await session.run("""
-                    MERGE (c:Concept {name: $name})
-                    SET c.description = $description,
-                        c.group = $group
-                """, {
-                    "name": node.get("id"),
-                    "description": node.get("description", ""),
-                    "group": node.get("group", 1)
-                })
+                name = node.get("id") or node.get("name")
+                if not name:
+                    continue
 
-            # 2. İlişkileri güvenli bir şekilde kur
+                difficulty = node.get("difficulty") or "orta"
+                fsrs_s = node.get("stability")
+                fsrs_p = node.get("fsrs_p")
+                if fsrs_s is None:
+                    fsrs_s = self.fsrs.calculate_initial_state(difficulty)["stability"]
+                if fsrs_p is None:
+                    fsrs_p = 1.0
+                fsrs_d = self.fsrs.calculate_initial_state(difficulty)["difficulty"]
+
+                # last_studied'i geriye tarihli ayarla ki get_graph_data yeniden hesapladığında
+                # aynı fsrs_p'ye ulaşsın (bkz. update_concept_after_quiz'deki aynı teknik).
+                elapsed_days = self.fsrs.calculate_elapsed_days_for_retrievability(fsrs_s, fsrs_p)
+                elapsed_seconds = int(elapsed_days * 24 * 3600)
+
+                await session.run(
+                    """
+                    MERGE (c:Concept {name: $name})
+                    SET c.topic        = $topic,
+                        c.difficulty   = $difficulty,
+                        c.fsrs_d       = $fsrs_d,
+                        c.fsrs_s       = $fsrs_s,
+                        c.fsrs_p       = $fsrs_p,
+                        c.created_at   = coalesce(c.created_at, datetime($created_at)),
+                        c.last_studied = datetime() - duration({seconds: $elapsed_seconds})
+                    """,
+                    {
+                        "name": name,
+                        "topic": node.get("topic"),
+                        "difficulty": difficulty,
+                        "fsrs_d": fsrs_d,
+                        "fsrs_s": fsrs_s,
+                        "fsrs_p": fsrs_p,
+                        "created_at": node.get("created_at") or datetime.now(timezone.utc).isoformat(),
+                        "elapsed_seconds": elapsed_seconds,
+                    },
+                )
+
+            # 2. İlişkileri RELATED_TO olarak kur (haritanın okuduğu ilişki tipiyle aynı)
             for edge in edges:
-                await session.run("""
+                source_name = edge.get("source")
+                target_name = edge.get("target")
+                if not source_name or not target_name:
+                    continue
+                await session.run(
+                    """
                     MATCH (source:Concept {name: $source_name})
                     MATCH (target:Concept {name: $target_name})
-                    MERGE (source)-[r:RELATES_TO]->(target)
-                """, {
-                    "source_name": edge.get("source"),
-                    "target_name": edge.get("target")
-                })
+                    MERGE (source)-[:RELATED_TO]->(target)
+                    """,
+                    {"source_name": source_name, "target_name": target_name},
+                )
         return True

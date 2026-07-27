@@ -8,37 +8,46 @@
   // Sadece ana çerçevede (iframe içinde değil) çalışmasını sağlayalım
   if (window.top !== window.self) return;
 
-  // Hafızadan "Kırmızı" (unutulmaya yüz tutmuş) kelimeleri çek
-  //Conflict çözüldü
-  chrome.storage.local.get(['redKeywords'], function(result) {
-    // Backend tam bağlanana kadar test edebilmeniz için varsayılan kelimeler:
-    const redKeywords = result.redKeywords || ["fastapi", "python", "optimizasyon"];
-    
+  // Regex özel karakterlerini kaçır (kavram isimlerinde "(CNN)" gibi parantezler olabiliyor)
+  function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  // Backend'den (background.js'nin periyodik çektiği) gerçek riskli kavram listesini oku
+  chrome.storage.local.get(["atRiskConcepts"], function (result) {
+    const atRiskConcepts = result.atRiskConcepts || [];
+    if (atRiskConcepts.length === 0) return; // Henüz veri yok veya risk altında kavram yok
+
     // Sayfa tam yüklendikten sonra ufak bir bekleme süresi (Performans için)
     setTimeout(() => {
-      scanPageAndPrompt(redKeywords);
+      scanPageAndPrompt(atRiskConcepts);
     }, 2000);
   });
 
-  function scanPageAndPrompt(redKeywords) {
+  function scanPageAndPrompt(atRiskConcepts) {
     const pageText = document.body.innerText.toLowerCase();
 
-    // Regex ile tam kelime eşleşmesi ara
-    let foundKeyword = null;
-    for (let kw of redKeywords) {
-      const regex = new RegExp(`\\b${kw.toLowerCase()}\\b`, "i");
+    // Regex ile tam kelime/ifade eşleşmesi ara
+    let found = null;
+    for (const concept of atRiskConcepts) {
+      const regex = new RegExp(`\\b${escapeRegex(concept.name.toLowerCase())}\\b`, "i");
       if (regex.test(pageText)) {
-        foundKeyword = kw;
-        break; 
+        found = concept;
+        break;
       }
     }
 
-    if (foundKeyword) {
-      showPassivePrompt(foundKeyword);
+    if (found) {
+      showPassivePrompt(found);
     }
   }
 
-  function showPassivePrompt(keyword) {
+  function showPassivePrompt(concept) {
+    const keyword = concept.name;
+    const days = concept.days_since_last_studied;
+    const daysText = typeof days === "number"
+      ? `${Math.round(days)} gün önce`
+      : "bir süre önce";
     // Eğer bildirim halihazırda ekrandaysa ikinciyi oluşturma
     if(document.getElementById('learnsphere-passive-prompt')) return;
 
@@ -77,7 +86,7 @@
         <button id="ls-close-btn" style="background: none; border: none; cursor: pointer; color: #9ca3af; font-size: 18px; line-height: 1; padding: 0;">&times;</button>
       </div>
       <p style="margin: 0 0 12px 0; font-size: 13px; color: #4b5563; line-height: 1.5;">
-        Şu an okuduğun <strong style="color: #ef4444;">${keyword.toUpperCase()}</strong> konusunu 10 gün önce çalışmıştın ve unutmak üzeresin. 1 dakikalık hızlı bir quiz ister misin?
+        Şu an okuduğun <strong style="color: #ef4444;">${keyword}</strong> konusunu ${daysText} çalışmıştın ve unutmak üzeresin. 1 dakikalık hızlı bir quiz ister misin?
       </p>
       <div style="display: flex; gap: 8px;">
         <button id="ls-quiz-btn" style="background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">
@@ -88,10 +97,10 @@
 
     document.body.appendChild(promptDiv);
 
-    // Buton İşlevleri
+    // Buton İşlevleri: quiz açma işini background.js'ye devret (content script'in
+    // chrome.tabs API erişimi yok), o da LearnSphere frontend'ini ilgili kavramla açar.
     document.getElementById('ls-quiz-btn').addEventListener('click', () => {
-      // Quiz mantığı sonraki aşamalarda buraya eklenecek
-      alert("LearnSphere Quiz sayfasına yönlendiriliyorsunuz..."); 
+      chrome.runtime.sendMessage({ type: "OPEN_QUIZ", concept: keyword });
       promptDiv.remove();
     });
 
