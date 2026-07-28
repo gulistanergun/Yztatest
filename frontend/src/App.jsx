@@ -25,12 +25,11 @@ function App() {
   const quizJustCompletedRef = useRef(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  // GEÇMİŞ YÜKLEME (LIMIT KONTROLLÜ) STATELERİ
   const [pendingHistoryFile, setPendingHistoryFile] = useState(null);
   const [historyLimit, setHistoryLimit] = useState(50);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [importAllHistory, setImportAllHistory] = useState(false);
 
-  // Referanslar
   const fileInputRef = useRef(null);
   const chatHistoryInputRef = useRef(null);
   const clusterNodesRef = useRef({});
@@ -316,26 +315,23 @@ function App() {
     event.target.value = null;
   };
 
-  // YENİ: Geçmiş Dosyası Seçildiğinde Hemen Yüklemez, Onay Modalını Açar
   const handleChatHistoryFileSelect = (event) => {
     const file = event.target.files[0];
     if (!file) return;
-    setPendingHistoryFile(file); // Dosyayı beklemeye al, modalı aç
+    setPendingHistoryFile(file); 
     event.target.value = null; 
   };
 
-  // YENİ: Kullanıcı limiti seçip Onayla dediğinde asıl yüklemeyi yapar
   const confirmHistoryUpload = async () => {
     if (!pendingHistoryFile) return;
 
     const formData = new FormData();
     formData.append("file", pendingHistoryFile);
-    // Eğer tümü seçiliyse 0 gönder (Sınırsız), aksi halde sayıyı gönder
     formData.append("limit", importAllHistory ? 0 : historyLimit);
 
     try {
       setLoading(true);
-      setPendingHistoryFile(null); // Modalı kapat
+      setPendingHistoryFile(null); 
 
       const response = await fetch('http://127.0.0.1:8080/api/v1/history/upload', {
         method: 'POST',
@@ -351,6 +347,30 @@ function App() {
     } catch (err) {
       console.error("Geçmiş yükleme hatası:", err);
       alert("Dosya yüklenirken sunucuya ulaşılamadı.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // YENİ: VERİTABANI SIFIRLAMA FONKSİYONU
+  // YENİ: VERİTABANI SIFIRLAMA FONKSİYONU
+  const handleClearDatabase = async () => {
+    setShowResetConfirm(false); // Modalı kapat
+    try {
+      setLoading(true);
+      const response = await fetch('http://127.0.0.1:8080/api/v1/graph/clear', {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        alert("Sistem başarıyla ilk günkü haline sıfırlandı!");
+        window.location.reload(); 
+      } else {
+        alert("Sıfırlama sırasında sunucu hatası oluştu.");
+      }
+    } catch (error) {
+      console.error("Sıfırlama hatası:", error);
+      alert("Sıfırlama sırasında sunucuya ulaşılamadı.");
     } finally {
       setLoading(false);
     }
@@ -658,6 +678,13 @@ function App() {
               title="Haritada henüz olmayan bir konu için öğrenme yolu iste">
               🎯 Yeni Hedef
             </button>
+            {/* SIFIRLAMA BUTONU */}
+            <button
+              onClick={() => setShowResetConfirm(true)}
+              style={{ background: '#ef4444', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}
+              title="Tüm veritabanını ve haritayı temizle">
+              🗑️ Sıfırla
+            </button>
           </div>
 
           {goalInputOpen && (
@@ -759,7 +786,6 @@ function App() {
         <HistoryPanel onClose={() => setHistoryOpen(false)} />
       )}
 
-      {/* YENİ: GEÇMİŞ İÇE AKTARMA ONAY MODALI */}
       {pendingHistoryFile && (
         <div className="quiz-overlay" onClick={() => setPendingHistoryFile(null)} style={{zIndex: 9999, position: 'fixed', top:0, left:0, right:0, bottom:0, display:'flex', alignItems:'center', justifyContent:'center', backgroundColor: 'rgba(0,0,0,0.7)'}}>
           <div className="quiz-card glass-panel" onClick={(e) => e.stopPropagation()} style={{background: '#1f2937', color: 'white', padding: '24px', borderRadius: '12px', width: '100%', maxWidth: '500px'}}>
@@ -799,6 +825,29 @@ function App() {
                 <button onClick={() => setPendingHistoryFile(null)} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>İptal</button>
                 <button onClick={confirmHistoryUpload} style={{ background: '#10B981', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Onayla ve Yükle</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* YENİ: SIFIRLAMA İKİLİ ONAY MODALI */}
+      {showResetConfirm && (
+        <div className="quiz-overlay" onClick={() => setShowResetConfirm(false)} style={{zIndex: 9999, position: 'fixed', top:0, left:0, right:0, bottom:0, display:'flex', alignItems:'center', justifyContent:'center', backgroundColor: 'rgba(0,0,0,0.8)'}}>
+          <div className="quiz-card glass-panel" onClick={(e) => e.stopPropagation()} style={{background: '#1f2937', color: 'white', padding: '30px', borderRadius: '12px', width: '100%', maxWidth: '450px', textAlign: 'center', borderTop: '4px solid #ef4444'}}>
+            <h2 style={{margin: '0 0 15px 0', color: '#ef4444'}}>⚠️ Kritik Uyarı</h2>
+            <p style={{marginBottom: '25px', fontSize: '16px', lineHeight: '1.5', color: '#D1D5DB'}}>
+              Gerçekten LearnSphere AI sisteminde işlenen tüm verileri silmek istiyor musun?
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '15px' }}>
+              <button 
+                onClick={() => setShowResetConfirm(false)} 
+                style={{ background: '#374151', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}>
+                Hayır (Korunsun)
+              </button>
+              <button 
+                onClick={handleClearDatabase} 
+                style={{ background: '#ef4444', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}>
+                Evet (Sıfırla)
+              </button>
             </div>
           </div>
         </div>
