@@ -178,6 +178,17 @@ async def resolve_learning_goal(
         return {"in_graph": True, **(path or {"found": False, "target": resolved["target"]})}
     return resolved
 
+@router.get(
+    "/brain-health",
+    summary="Beyin Sağlığı Skoru",
+    description="Tüm kavramların FSRS durumunu, quiz başarısını ve çalışma düzenini analiz ederek 0-100 arası genel bir öğrenme sağlığı skoru hesaplar.",
+)
+async def get_brain_health(
+    service: GraphService = Depends(get_graph_service),
+):
+    """Kullanıcının genel öğrenme sağlığını 0-100 arası puanlar."""
+    return await service.calculate_brain_health()
+
 @router.delete("/graph/clear", summary="Tüm Veritabanını Sıfırla")
 async def clear_database(
     neo4j_driver = Depends(get_neo4j_driver),

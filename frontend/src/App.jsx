@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import ChatBar from './components/ChatBar';
 import QuizModal from './components/QuizModal';
 import HistoryPanel from './components/HistoryPanel';
+import BrainHealthBadge from './components/BrainHealthBadge';
 
 function App() {
   const [fullGraphData, setFullGraphData] = useState({ nodes: [], edges: [] });
@@ -30,6 +31,11 @@ function App() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [importAllHistory, setImportAllHistory] = useState(false);
 
+  // Brain Health Score state
+  const [brainHealth, setBrainHealth] = useState(null);
+  const [brainHealthLoading, setBrainHealthLoading] = useState(false);
+  const [brainHealthError, setBrainHealthError] = useState(null);
+
   const fileInputRef = useRef(null);
   const chatHistoryInputRef = useRef(null);
   const clusterNodesRef = useRef({});
@@ -46,8 +52,25 @@ function App() {
     }
   };
 
+  const fetchBrainHealth = async () => {
+    setBrainHealthLoading(true);
+    setBrainHealthError(null);
+    try {
+      const response = await fetch('http://127.0.0.1:8080/api/v1/brain-health');
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      setBrainHealth(data);
+    } catch (error) {
+      console.error('Beyin sağlığı skoru yüklenemedi:', error);
+      setBrainHealthError('Skor yüklenemedi');
+    } finally {
+      setBrainHealthLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchGraph();
+    fetchBrainHealth();
   }, []);
 
   useEffect(() => {
@@ -216,6 +239,7 @@ function App() {
   const handleQuizCompleted = () => {
     quizJustCompletedRef.current = true;
     fetchGraph();
+    fetchBrainHealth();
   };
 
   const handleQuizClose = () => {
@@ -712,16 +736,23 @@ function App() {
             </form>
           )}
 
-          <div className="statbar">
-            <span className="stat"><b>{stats.total}</b> kavram</span>
-            <span className="dot" />
-            <span className={stats.hasP ? 'stat strong' : 'stat warm'}>
-              <b>{stats.fresh}</b> {stats.hasP ? 'sağlam' : 'taze köz'}
-            </span>
-            <span className="dot" />
-            <span className={stats.hasP ? 'stat risk' : 'stat cold'}>
-              <b>{stats.cooling}</b> {stats.hasP ? 'riskte' : 'soğuyor'}
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <BrainHealthBadge
+              data={brainHealth}
+              loading={brainHealthLoading}
+              error={brainHealthError}
+            />
+            <div className="statbar">
+              <span className="stat"><b>{stats.total}</b> kavram</span>
+              <span className="dot" />
+              <span className={stats.hasP ? 'stat strong' : 'stat warm'}>
+                <b>{stats.fresh}</b> {stats.hasP ? 'sağlam' : 'taze köz'}
+              </span>
+              <span className="dot" />
+              <span className={stats.hasP ? 'stat risk' : 'stat cold'}>
+                <b>{stats.cooling}</b> {stats.hasP ? 'riskte' : 'soğuyor'}
+              </span>
+            </div>
           </div>
           {activeSource && (
             <p className="filter-note">

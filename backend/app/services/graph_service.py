@@ -1,5 +1,6 @@
 import asyncio
 from typing import Optional
+from datetime import datetime, timezone
 from neo4j import AsyncDriver
 from app.services.extraction_service import ConceptExtractor, ExtractionResult
 from app.core.logging import get_logger
@@ -876,3 +877,146 @@ class GraphService:
                     {"source_name": source_name, "target_name": target_name},
                 )
         return True
+
+    async def calculate_brain_health(self):
+        async with self.neo4j.session() as session:
+            # 1. Total Concepts & FSRS Data
+            result = await session.run(
+                """
+                MATCH (c:Concept)
+                WITH coalesce(c.fsrs_p, 1.0) AS p
+                WITH count(*) AS total_concepts,
+                     avg(p) AS avg_p,
+                     sum(CASE WHEN p >= 0.8 THEN 1 ELSE 0 END) AS healthy_count,
+                     sum(CASE WHEN p >= 0.5 AND p < 0.8 THEN 1 ELSE 0 END) AS warning_count,
+                     sum(CASE WHEN p < 0.5 THEN 1 ELSE 0 END) AS at_risk_count
+                RETURN total_concepts, avg_p, healthy_count, warning_count, at_risk_count
+                """
+            )
+            record = await result.single()
+            total_concepts = record["total_concepts"] if record else 0
+
+            if total_concepts == 0:
+                return {
+                    "score": None,
+                    "label": None,
+                    "breakdown": {
+                        "average_retention": {"value": 0.0, "weight": 0.50, "weighted": 0.0},
+                        "healthy_ratio": {"value": 0.0, "weight": 0.25, "weighted": 0.0, "count": 0, "total": 0},
+                        "recent_quiz_accuracy": {"value": None, "weight": 0.15, "weighted": None, "attempt_count": 0},
+                        "study_consistency": {"value": 0.0, "weight": 0.10, "weighted": 0.0, "active_days_last_30": 0}
+                    },
+                    "concept_summary": {"total": 0, "healthy": 0, "warning": 0, "at_risk": 0},
+                    "computed_at": datetime.now(timezone.utc).isoformat()
+                }
+
+            avg_p = record["avg_p"] or 0.0
+            healthy_count = record["healthy_count"] or 0
+            warning_count = record["warning_count"] or 0
+            at_risk_count = record["at_risk_count"] or 0
+
+            # 2. Recent Quiz Accuracy
+            quiz_result = await session.run(
+                """
+                MATCH (u:User {id: 'local_user'})-[:ATTEMPTED]->(qa:QuizAttempt)
+                RETURN qa.score AS score
+                ORDER BY qa.timestamp DESC
+                LIMIT 10
+                """
+            )
+            quiz_records = await quiz_result.data()
+            recent_quiz_scores = [r["score"] for r in quiz_records if r["score"] is not None]
+            recent_quiz_accuracy = (sum(recent_quiz_scores) / len(recent_quiz_scores)) * 100 if recent_quiz_scores else None
+
+            # 3. Study Consistency
+            consistency_result = await session.run(
+                """
+                MATCH (c:Concept)
+                WHERE c.created_at IS NOT NULL AND c.created_at >= datetime() - duration({days: 30})
+                RETURN date(c.created_at) AS active_day
+                UNION
+                MATCH (u:User {id: 'local_user'})-[:ATTEMPTED]->(qa:QuizAttempt)
+                WHERE qa.timestamp IS NOT NULL AND qa.timestamp >= datetime() - duration({days: 30})
+                RETURN date(qa.timestamp) AS active_day
+                """
+            )
+            consistency_records = await consistency_result.data()
+            distinct_days = len(set(r["active_day"] for r in consistency_records if r["active_day"] is not None))
+
+            # Weights
+            w_retention = 0.50
+            w_healthy = 0.25
+            w_quiz = 0.15
+            w_consistency = 0.10
+
+            if recent_quiz_accuracy is None:
+                w_retention = 0.50 / 0.85
+                w_healthy = 0.25 / 0.85
+                w_consistency = 0.10 / 0.85
+
+            val_retention = avg_p * 100
+            val_healthy = (healthy_count / total_concepts) * 100
+            val_consistency = min(100.0, (distinct_days / 15) * 100)
+
+            weighted_retention = val_retention * w_retention
+            weighted_healthy = val_healthy * w_healthy
+            weighted_quiz = recent_quiz_accuracy * w_quiz if recent_quiz_accuracy is not None else None
+            weighted_consistency = val_consistency * w_consistency
+
+            total_score = weighted_retention + weighted_healthy + weighted_consistency
+            if weighted_quiz is not None:
+                total_score += weighted_quiz
+
+            total_score = max(0.0, min(100.0, total_score))
+            final_score = int(round(total_score))
+
+            if final_score >= 85:
+                label = "Mükemmel"
+            elif final_score >= 70:
+                label = "İyi"
+            elif final_score >= 50:
+                label = "Orta"
+            elif final_score >= 25:
+                label = "Zayıf"
+            else:
+                label = "Kritik"
+
+            logger.info(f"Computed Brain Health Score: {final_score}")
+
+            return {
+                "score": final_score,
+                "label": label,
+                "breakdown": {
+                    "average_retention": {
+                        "value": round(val_retention, 1),
+                        "weight": round(w_retention, 4),
+                        "weighted": round(weighted_retention, 1)
+                    },
+                    "healthy_ratio": {
+                        "value": round(val_healthy, 1),
+                        "weight": round(w_healthy, 4),
+                        "weighted": round(weighted_healthy, 1),
+                        "count": healthy_count,
+                        "total": total_concepts
+                    },
+                    "recent_quiz_accuracy": {
+                        "value": round(recent_quiz_accuracy, 1) if recent_quiz_accuracy is not None else None,
+                        "weight": round(w_quiz, 4),
+                        "weighted": round(weighted_quiz, 1) if weighted_quiz is not None else None,
+                        "attempt_count": len(recent_quiz_scores)
+                    },
+                    "study_consistency": {
+                        "value": round(val_consistency, 1),
+                        "weight": round(w_consistency, 4),
+                        "weighted": round(weighted_consistency, 1),
+                        "active_days_last_30": distinct_days
+                    }
+                },
+                "concept_summary": {
+                    "total": total_concepts,
+                    "healthy": healthy_count,
+                    "warning": warning_count,
+                    "at_risk": at_risk_count
+                },
+                "computed_at": datetime.now(timezone.utc).isoformat()
+            }
