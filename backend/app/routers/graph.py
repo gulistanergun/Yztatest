@@ -1,27 +1,25 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from typing import List, Dict, Any
+
 from app.services.graph_service import GraphService
 from app.services.learning_goal_service import LearningGoalService
 from app.db.neo4j_client import get_neo4j_driver
+from app.db.qdrant_client import get_qdrant_client
+from app.core.config import get_settings
 from app.core.logging import get_logger
-
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["Graph"])
-
-
-from app.db.qdrant_client import get_qdrant_client
 
 async def get_graph_service() -> GraphService:
     neo4j = await get_neo4j_driver()
     qdrant = await get_qdrant_client()
     return GraphService(neo4j_driver=neo4j, qdrant_client=qdrant)
 
-
 async def get_learning_goal_service() -> LearningGoalService:
     neo4j = await get_neo4j_driver()
     return LearningGoalService(neo4j_driver=neo4j)
-
 
 @router.get(
     "/graph",
@@ -34,7 +32,6 @@ async def get_graph(
     """React force-graph'in kullanacagi node/edge formati."""
     return await service.get_graph_data()
 
-
 @router.get(
     "/sources",
     summary="NotebookLM Sidebar Kaynakları",
@@ -45,7 +42,6 @@ async def get_sources(
 ):
     """Sol panelde listelenecek kaynaklar."""
     return await service.get_sources()
-
 
 @router.post(
     "/graph/process",
@@ -72,11 +68,9 @@ async def delete_source(
     await service.delete_session(session_id)
     return {"status": "deleted", "session_id": session_id}
 
-
 class QuizSubmitPayload(BaseModel):
     concept_name: str
     score: float
-
 
 @router.post(
     "/quiz/submit",
@@ -92,8 +86,6 @@ async def submit_quiz_result(
         score=payload.score
     )
 
-from typing import List, Dict, Any
-
 @router.get(
     "/quiz/history",
     summary="Quiz Gecmisi",
@@ -106,7 +98,6 @@ async def get_quiz_history(
 ):
     history = await service.get_quiz_history(limit=limit, concept=concept)
     return {"history": history, "total": len(history)}
-
 
 class ImportPayload(BaseModel):
     nodes: List[Dict[str, Any]]
@@ -124,7 +115,6 @@ async def import_graph_endpoint(
     await service.import_graph_data(payload.model_dump())
     return {"status": "success", "imported_nodes": len(payload.nodes)}
 
-
 @router.get(
     "/clusters",
     summary="Konu Kümeleri",
@@ -139,7 +129,6 @@ async def get_clusters(
 ):
     """Topic bazlı kavram kümeleri ve her kümenin FSRS sağlık durumu."""
     return await service.get_topic_clusters()
-
 
 @router.get(
     "/learning-path",
@@ -161,10 +150,8 @@ async def get_learning_path(
         raise HTTPException(status_code=404, detail=f"Concept '{target}' bulunamadi.")
     return result
 
-
 class LearningGoalRequest(BaseModel):
     goal: str
-
 
 @router.post(
     "/learning-goal",
@@ -190,3 +177,27 @@ async def resolve_learning_goal(
         path = await graph_service.get_learning_path(resolved["target"])
         return {"in_graph": True, **(path or {"found": False, "target": resolved["target"]})}
     return resolved
+
+@router.delete("/graph/clear", summary="Tüm Veritabanını Sıfırla")
+async def clear_database(
+    neo4j_driver = Depends(get_neo4j_driver),
+    qdrant_client = Depends(get_qdrant_client)
+):
+    """Tüm zihin haritasını, kaynakları ve geçmişi veritabanından ve vektör uzayından tamamen siler."""
+    # 1. Neo4j (Kavramlar ve İlişkiler) Temizliği
+    async with neo4j_driver.session() as session:
+        await session.run("MATCH (n) DETACH DELETE n")
+    
+    # 2. Qdrant (Vektörler) Temizliği (Hayalet quiz çeldiricilerini engeller)
+    if qdrant_client:
+        settings = get_settings()
+        from qdrant_client.models import Filter
+        try:
+            await qdrant_client.delete(
+                collection_name=settings.QDRANT_COLLECTION_NAME,
+                points_selector=Filter() 
+            )
+        except Exception as e:
+            logger.warning(f"Qdrant temizlenemedi: {e}")
+            
+    return {"status": "success", "message": "Sistem başarıyla fabrika ayarlarına döndürüldü."}
