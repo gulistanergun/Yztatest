@@ -861,3 +861,236 @@ body {
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
+
+/* ==========================================================
+   Brain Health Badge — Beyin Sağlığı Skoru göstergesi
+   ========================================================== */
+
+.bhb-container {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.bhb-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px 6px 6px;
+  border-radius: 12px;
+  cursor: pointer;
+  border: 1px solid var(--cizgi);
+  background: rgba(14, 23, 42, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  user-select: none;
+}
+
+.bhb-badge:hover {
+  background: rgba(14, 23, 42, 0.75);
+  border-color: rgba(255, 180, 84, 0.22);
+  box-shadow: 0 4px 16px rgba(2, 6, 16, 0.4);
+}
+
+.bhb-badge:focus-visible {
+  outline: 2px solid var(--kor);
+  outline-offset: 2px;
+}
+
+.bhb-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.bhb-title {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--sis);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.bhb-score-text {
+  font-family: var(--font-display);
+  font-size: 0.88rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.bhb-max {
+  font-size: 0.65rem;
+  font-weight: 400;
+  opacity: 0.45;
+}
+
+.bhb-label {
+  font-size: 0.58rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+  font-family: var(--font-mono);
+}
+
+.bhb-chevron {
+  font-size: 0.72rem;
+  color: var(--sis);
+  transition: transform 0.25s ease;
+  margin-left: 2px;
+}
+
+.bhb-chevron-up {
+  transform: rotate(180deg);
+}
+
+/* Loading pulse */
+.bhb-loading {
+  gap: 8px;
+  padding: 8px 14px;
+}
+
+.bhb-pulse {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(139, 152, 172, 0.12);
+  animation: bhb-pulse-anim 1.5s ease-in-out infinite;
+}
+
+@keyframes bhb-pulse-anim {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.05); }
+}
+
+/* Error state */
+.bhb-error {
+  border-color: rgba(255, 107, 107, 0.3);
+}
+
+/* Empty state */
+.bhb-empty .bhb-gauge {
+  opacity: 0.4;
+}
+
+/* ---- Dropdown breakdown panel ---- */
+.bhb-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 300px;
+  padding: 16px 18px;
+  z-index: 50;
+  animation: bhb-slide-in 0.2s ease-out;
+}
+
+@keyframes bhb-slide-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.bhb-dropdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--cizgi);
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--kagit);
+}
+
+.bhb-dropdown-score {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+/* Breakdown rows */
+.bhb-breakdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bhb-breakdown-row {
+  display: grid;
+  grid-template-columns: 1fr 80px 44px;
+  align-items: center;
+  gap: 10px;
+}
+
+.bhb-breakdown-label {
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  color: var(--sis);
+  white-space: nowrap;
+}
+
+.bhb-breakdown-bar-wrap {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(139, 152, 172, 0.1);
+  overflow: hidden;
+}
+
+.bhb-breakdown-bar {
+  height: 100%;
+  border-radius: 3px;
+  min-width: 0;
+}
+
+.bhb-breakdown-value {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--kagit);
+  text-align: right;
+}
+
+/* Concept summary row */
+.bhb-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--cizgi);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--sis);
+  flex-wrap: wrap;
+}
+
+.bhb-summary-item b {
+  font-weight: 700;
+}
+
+.bhb-summary-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--cizgi);
+  flex-shrink: 0;
+}
+
+.bhb-no-quiz-note {
+  margin-top: 10px;
+  font-size: 0.65rem;
+  color: var(--sis);
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.bhb-empty-msg {
+  font-size: 0.75rem;
+  color: var(--sis);
+  text-align: center;
+  padding: 8px 0;
+  line-height: 1.5;
+}
