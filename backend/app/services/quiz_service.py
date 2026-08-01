@@ -92,7 +92,7 @@ class QuizService:
         self.qdrant = qdrant_client
         self.embeddings = get_local_embeddings()
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-3.5-flash",
+            model="gemini-3.1-flash-lite",
             temperature=0.4,
             api_key=settings.GOOGLE_API_KEY,
         )
